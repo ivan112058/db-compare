@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" height="100" width="100">
+  
+  <rect fill="#3b82f6" rx="6" height="50" width="64" y="25" x="18"></rect>
+  <rect fill="#f87171" rx="6" height="50" width="32" y="25" x="50"></rect>
+
+  
+  <g transform="translate(32,42)">
+    <line stroke-linecap="round" stroke-width="4" stroke="#4ade80" y2="0" x2="5" y1="0" x1="-5"></line>
+    <line stroke-linecap="round" stroke-width="4" stroke="#4ade80" y2="5" x2="0" y1="-5" x1="0"></line>
+  </g>
+
+  
+  <g transform="translate(68,42)">
+    <line stroke-linecap="round" stroke-width="4" stroke="white" y2="0" x2="6" y1="0" x1="-6"></line>
+  </g>
+
+  
+  <line opacity="0.85" stroke-width="3" stroke="white" y2="55" x2="40" y1="55" x1="24"></line>
+  <line opacity="0.85" stroke-width="3" stroke="white" y2="67" x2="40" y1="67" x1="24"></line>
+  <line opacity="0.85" stroke-width="3" stroke="white" y2="55" x2="76" y1="55" x1="60"></line>
+  <line opacity="0.85" stroke-width="3" stroke="white" y2="67" x2="76" y1="67" x1="60"></line>
+</svg>
