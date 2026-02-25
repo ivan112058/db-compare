@@ -25,7 +25,7 @@ class ConfigController {
     @GetMapping("/list")
     fun listConfigs(): List<String> {
         return configDir.listFiles { file ->
-            file.isFile && (file.name.endsWith(".yaml") || file.name.endsWith(".yml"))
+            file.isFile && (file.name.endsWith(".yml"))
         }?.map { it.name } ?: emptyList()
     }
 
@@ -40,7 +40,7 @@ class ConfigController {
 
     @PostMapping("/save")
     fun saveConfig(@RequestParam filename: String, @RequestBody config: CompareRequest): Map<String, Any> {
-        val name = if (filename.endsWith(".yaml") || filename.endsWith(".yml")) filename else "$filename.yaml"
+        val name = if (filename.endsWith(".yml")) filename else "$filename.yml"
         val file = File(configDir, name)
         mapper.writeValue(file, config)
         return mapOf("success" to true, "filename" to name)

@@ -74,7 +74,7 @@ class SqlGenerationService {
             if (diff.dataDiff?.added?.isNotEmpty() == true) {
                 sb.append("-- Change: Insert new rows\n")
                 diff.dataDiff?.added?.forEach { row ->
-                    sb.append(buildInsertStatement(diff.tableName, row)).append(";\n")
+                    sb.append(buildInsertStatement(diff.tableName, row, diff.primaryKeys)).append(";\n")
                 }
             }
             return sb.toString()
@@ -148,7 +148,7 @@ class SqlGenerationService {
             if (!data.added.isNullOrEmpty()) {
                 sb.append("-- Change: Insert new rows\n")
                 data.added!!.forEach { row ->
-                    sb.append(buildInsertStatement(diff.tableName, row)).append(";\n")
+                    sb.append(buildInsertStatement(diff.tableName, row, diff.primaryKeys)).append(";\n")
                 }
             }
 
@@ -180,7 +180,7 @@ class SqlGenerationService {
              if (diff.dataDiff?.removed?.isNotEmpty() == true) {
                  sb.append("-- Change: Restore deleted rows (Rollback Delete)\n")
                  diff.dataDiff?.removed?.forEach { row ->
-                     sb.append(buildInsertStatement(diff.tableName, row)).append(";\n")
+                     sb.append(buildInsertStatement(diff.tableName, row, diff.primaryKeys)).append(";\n")
                  }
              }
              return sb.toString()
@@ -259,7 +259,7 @@ class SqlGenerationService {
              if (!data.removed.isNullOrEmpty()) {
                  sb.append("-- Change: Restore deleted rows (Rollback Delete)\n")
                  data.removed!!.forEach { row ->
-                     sb.append(buildInsertStatement(diff.tableName, row)).append(";\n")
+                     sb.append(buildInsertStatement(diff.tableName, row, diff.primaryKeys)).append(";\n")
                  }
              }
 
@@ -313,10 +313,17 @@ class SqlGenerationService {
         }
     }
 
-    private fun buildInsertStatement(tableName: String, row: Map<String, Any?>): String {
+    private fun buildInsertStatement(tableName: String, row: Map<String, Any?>, pks: List<String>?): String {
         val validEntries = row.entries.filter { it.key != "_source" }
         val cols = validEntries.joinToString(", ") { "`${it.key}`" }
         val vals = validEntries.joinToString(", ") { formatValue(it.value) }
+
+        if (!pks.isNullOrEmpty()) {
+            val whereClause = buildWhereClause(row, pks)
+            if (whereClause.isNotEmpty()) {
+                return "INSERT INTO `$tableName` ($cols) SELECT $vals FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `$tableName` WHERE $whereClause)"
+            }
+        }
         return "INSERT IGNORE INTO `$tableName` ($cols) VALUES ($vals)"
     }
 

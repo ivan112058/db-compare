@@ -124,9 +124,9 @@ class DatabaseService {
     }
 
     @Throws(SQLException::class)
-    fun getTableData(conn: Connection, tableName: String): List<Map<String, Any?>> {
+    fun getTableData(conn: Connection, tableName: String, customQuery: String? = null): List<Map<String, Any?>> {
         val data = ArrayList<Map<String, Any?>>()
-        val sql = "SELECT * FROM $tableName" // Should ideally order by Primary Key
+        val sql = customQuery ?: "SELECT * FROM $tableName" // Should ideally order by Primary Key
         
         conn.createStatement().use { stmt ->
             stmt.executeQuery(sql).use { rs ->
@@ -136,7 +136,7 @@ class DatabaseService {
                 while (rs.next()) {
                     val row = LinkedHashMap<String, Any?>()
                     for (i in 1..columnCount) {
-                        row[metaData.getColumnName(i)] = rs.getObject(i)
+                        row[metaData.getColumnLabel(i)] = rs.getObject(i)
                     }
                     data.add(row)
                 }

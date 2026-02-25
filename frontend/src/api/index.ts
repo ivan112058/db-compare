@@ -21,6 +21,8 @@ export interface CompareRequest {
     ignoreDataTables?: string[];
     specifiedPrimaryKeys?: string[];
     excludeDataRows?: string[];
+    includeDataRows?: string[];
+    specifiedDataQueries?: string[];
 }
 
 export const checkConnection = (config: DbConfig) => {
@@ -81,6 +83,8 @@ export interface EnvConfig {
     ignoreDataTables?: string[];
     specifiedPrimaryKeys?: string[];
     excludeDataRows?: string[];
+    includeDataRows?: string[];
+    specifiedDataQueries?: string[];
 }
 
 export interface DockerParams {

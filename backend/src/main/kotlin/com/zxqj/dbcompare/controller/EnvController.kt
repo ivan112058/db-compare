@@ -34,7 +34,7 @@ class EnvController {
     @GetMapping("/list")
     fun listEnvs(): List<String> {
         return envDir.listFiles { file ->
-            file.isFile && (file.name.endsWith(".yaml") || file.name.endsWith(".yml"))
+            file.isFile && (file.name.endsWith(".yml"))
         }?.map { it.name } ?: emptyList()
     }
 
@@ -64,7 +64,8 @@ class EnvController {
             excludeTables = config.excludeTables,
             ignoreDataTables = config.ignoreDataTables,
             specifiedPrimaryKeys = config.specifiedPrimaryKeys,
-            excludeDataRows = config.excludeDataRows
+            excludeDataRows = config.excludeDataRows,
+            specifiedDataQueries = config.specifiedDataQueries
         )
         
         val filename = "${config.name}_local.yml"

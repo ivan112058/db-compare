@@ -137,6 +137,7 @@ class CompareService(private val dbService: DatabaseService) {
         var primaryKeys: List<String>? = null
 
         val skipDataCompare = request.ignoreDataTables?.contains(tableName) ?: false
+        val customQuery = getTableQuery(tableName, request.specifiedDataQueries)
 
         if (inSource && inTarget) {
             if (skipDataCompare) {
@@ -144,8 +145,8 @@ class CompareService(private val dbService: DatabaseService) {
                 sourceCount = 0
                 targetCount = 0
             } else {
-                val rawSourceData = dbService.getTableData(sourceConn, tableName)
-                val rawTargetData = dbService.getTableData(targetConn, tableName)
+                val rawSourceData = dbService.getTableData(sourceConn, tableName, customQuery)
+                val rawTargetData = dbService.getTableData(targetConn, tableName, customQuery)
                 sourceCount = rawSourceData.size
                 targetCount = rawTargetData.size
 
@@ -155,7 +156,8 @@ class CompareService(private val dbService: DatabaseService) {
                     rawSourceData, rawTargetData, 
                     sourceStruct, targetStruct, 
                     request.ignoreFields, tableName, primaryKeys,
-                    request.excludeDataRows
+                    request.excludeDataRows,
+                    request.includeDataRows
                 )
 
                 dataDiff = calculateDataDiff(alignedSource, alignedTarget, primaryKeys, tableName)
@@ -165,7 +167,7 @@ class CompareService(private val dbService: DatabaseService) {
             if (inSource) {
                 sourceCount = dbService.getRowCount(sourceConn, tableName)
                 if (!skipDataCompare) {
-                    val rawData = dbService.getTableData(sourceConn, tableName)
+                    val rawData = dbService.getTableData(sourceConn, tableName, customQuery)
                     primaryKeys = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, sourceStruct)
                     val normalizedData = normalizeData(rawData, request.ignoreFields, tableName, primaryKeys)
                     
@@ -179,7 +181,7 @@ class CompareService(private val dbService: DatabaseService) {
             if (inTarget) {
                 targetCount = dbService.getRowCount(targetConn, tableName)
                 if (!skipDataCompare) {
-                    val rawData = dbService.getTableData(targetConn, tableName)
+                    val rawData = dbService.getTableData(targetConn, tableName, customQuery)
                     primaryKeys = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, targetStruct)
                     val normalizedData = normalizeData(rawData, request.ignoreFields, tableName, primaryKeys)
                     
@@ -199,14 +201,37 @@ class CompareService(private val dbService: DatabaseService) {
         )
     }
 
-    private fun filterData(
+    private fun applyRowFilters(
         data: List<Map<String, Any?>>,
         tableName: String,
-        excludeDataRows: List<String>?
+        excludeDataRows: List<String>?,
+        includeDataRows: List<String>?
     ): List<Map<String, Any?>> {
-        if (excludeDataRows.isNullOrEmpty() || data.isEmpty()) return data
+        if (data.isEmpty()) return data
 
-        val rules = excludeDataRows.mapNotNull { rule ->
+        // 1. Check Include Rules
+        val includeRules = parseRowRules(includeDataRows, tableName)
+        if (includeRules.isNotEmpty()) {
+            return data.filter { row ->
+                includeRules.any { rule -> matchRule(row, rule) }
+            }
+        }
+
+        // 2. Check Exclude Rules
+        val excludeRules = parseRowRules(excludeDataRows, tableName)
+        if (excludeRules.isNotEmpty()) {
+            return data.filterNot { row ->
+                excludeRules.any { rule -> matchRule(row, rule) }
+            }
+        }
+
+        return data
+    }
+
+    private fun parseRowRules(rules: List<String>?, tableName: String): List<Map<String, String>> {
+        if (rules.isNullOrEmpty()) return emptyList()
+
+        return rules.mapNotNull { rule ->
             // Parse rule: table_name(col=value) or table_name(col1#col2=value1#value2)
             val trimmedRule = rule.trim()
             if (trimmedRule.startsWith("$tableName(") && trimmedRule.endsWith(")")) {
@@ -221,18 +246,14 @@ class CompareService(private val dbService: DatabaseService) {
                 } else null
             } else null
         }
+    }
 
-        if (rules.isEmpty()) return data
-
-        return data.filterNot { row ->
-            rules.any { rule ->
-                rule.all { (col, expectedVal) ->
-                    // Determine if row matches criteria.
-                    // Case-insensitive check for column name?
-                    val actualVal = row[col] ?: row.entries.find { it.key.equals(col, ignoreCase = true) }?.value
-                    actualVal?.toString() == expectedVal
-                }
-            }
+    private fun matchRule(row: Map<String, Any?>, rule: Map<String, String>): Boolean {
+        return rule.all { (col, expectedVal) ->
+            // Determine if row matches criteria.
+            // Case-insensitive check for column name?
+            val actualVal = row[col] ?: row.entries.find { it.key.equals(col, ignoreCase = true) }?.value
+            actualVal?.toString() == expectedVal
         }
     }
 
@@ -244,11 +265,12 @@ class CompareService(private val dbService: DatabaseService) {
         ignoreFields: List<String>?,
         tableName: String,
         primaryKeys: List<String>?,
-        excludeDataRows: List<String>? = null
+        excludeDataRows: List<String>? = null,
+        includeDataRows: List<String>? = null
     ): Pair<List<Map<String, Any?>>, List<Map<String, Any?>>> {
-        // 0. Filter Excluded Rows
-        val filteredSource = filterData(sourceData, tableName, excludeDataRows)
-        val filteredTarget = filterData(targetData, tableName, excludeDataRows)
+        // 0. Filter Rows (Include/Exclude)
+        val filteredSource = applyRowFilters(sourceData, tableName, excludeDataRows, includeDataRows)
+        val filteredTarget = applyRowFilters(targetData, tableName, excludeDataRows, includeDataRows)
 
         // 1. Normalize (remove ignored fields)
         val normalizedSource = normalizeData(filteredSource, ignoreFields, tableName, primaryKeys)
@@ -456,5 +478,14 @@ class CompareService(private val dbService: DatabaseService) {
 
     private fun isAllNull(data: List<Map<String, Any?>>, colName: String): Boolean {
         return data.all { it[colName] == null }
+    }
+
+    private fun getTableQuery(tableName: String, specifiedDataQueries: List<String>?): String? {
+        return specifiedDataQueries?.firstNotNullOfOrNull {
+            val parts = it.split("=", limit = 2)
+            if (parts.size == 2 && parts[0].trim() == tableName) {
+                parts[1].trim()
+            } else null
+        }
     }
 }

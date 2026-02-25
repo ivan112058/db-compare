@@ -37,7 +37,7 @@
                   <label class="text-sm font-medium text-gray-600">Host</label>
                   <InputText v-model="form.source.host" placeholder="localhost" fluid />
                 </div>
-                <div class="flex flex-col gap-2 w-[100px]">
+                <div class="flex flex-col gap-2 w-25">
                   <label class="text-sm font-medium text-gray-600">Port</label>
                   <InputNumber v-model="form.source.port" :min="1" :max="65535" :useGrouping="false" fluid />
                 </div>
@@ -69,7 +69,7 @@
                   <label class="text-sm font-medium text-gray-600">Host</label>
                   <InputText v-model="form.target.host" placeholder="localhost" fluid />
                 </div>
-                <div class="flex flex-col gap-2 w-[100px]">
+                <div class="flex flex-col gap-2 w-25">
                   <label class="text-sm font-medium text-gray-600">Port</label>
                   <InputNumber v-model="form.target.port" :min="1" :max="65535" :useGrouping="false" fluid />
                 </div>
@@ -117,12 +117,20 @@
               <label class="text-sm font-medium text-gray-600">Exclude Data Rows</label>
               <AutoComplete v-model="form.excludeDataRows" multiple :typeahead="false" placeholder="table(col=val) or table(col1#col2=val1#val2)" fluid />
             </div>
+            <div class="flex flex-col gap-2">
+              <label class="text-sm font-medium text-gray-600">Include Data Rows</label>
+              <AutoComplete v-model="form.includeDataRows" multiple :typeahead="false" placeholder="table(col=val) or table(col1#col2=val1#val2)" fluid />
+            </div>
+            <div class="flex flex-col gap-2">
+              <label class="text-sm font-medium text-gray-600">Specified Data Queries</label>
+              <AutoComplete v-model="form.specifiedDataQueries" multiple :typeahead="false" placeholder="table=select * from table where ..." fluid />
+            </div>
           </div>
         </template>
       </Card>
 
       <div class="pb-4 flex justify-center relative">
-        <Button label="Start Compare" @click="handleCompare" :loading="loading" class="w-[200px]" />
+        <Button label="Start Compare" @click="handleCompare" :loading="loading" class="w-50" />
       </div>
     </div>
   </ScrollPanel>
@@ -169,7 +177,8 @@ const form = reactive<CompareRequest>({
   ignoreFields: [],
   excludeTables: [],
   ignoreDataTables: [],
-  specifiedPrimaryKeys: []
+  specifiedPrimaryKeys: [],
+  specifiedDataQueries: []
 });
 
 const loadConfigs = async () => {
