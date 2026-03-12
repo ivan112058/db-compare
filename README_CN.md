@@ -35,6 +35,18 @@
 - **可视化界面**
   - 直观展示差异详情，支持代码高亮显示生成的 SQL。
 
+## 🛡️ 安全的 SQL 执行 (Idempotent SQL)
+
+DB Compare 生成的 Upgrade 和 Rollback 脚本均采用**幂等性设计**。这意味着脚本在执行变更前，会先查询 `INFORMATION_SCHEMA` 系统表来判断当前数据库的状态。因此，即使脚本被重复执行（例如在 CI/CD 流程中），也不会因为对象已存在或不存在而报错，确保了发布过程的安全性。
+
+| 变更场景 | 执行逻辑 | 语句示例 (简化) |
+| :--- | :--- | :--- |
+| **创建表** | 检查表是否存在，不存在才创建 | `CREATE TABLE IF NOT EXISTS system_log ...` |
+| **添加列** | 检查列是否存在，**不存在**才添加 | `SET @preparedStatement = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE ...)>0, 'SELECT 1', 'ALTER TABLE ... ADD COLUMN ...')); PREPARE stmt FROM @preparedStatement; EXECUTE stmt;` |
+| **删除列** | 检查列是否存在，**存在**才删除 | `SET @preparedStatement = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE ...)>0, 'ALTER TABLE ... DROP COLUMN ...', 'SELECT 1')); PREPARE stmt FROM @preparedStatement; EXECUTE stmt;` |
+| **添加索引** | 检查索引是否存在，**不存在**才添加 | `SET @preparedStatement = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE ...)>0, 'SELECT 1', 'ALTER TABLE ... ADD INDEX ...')); ...` |
+| **删除索引** | 检查索引是否存在，**存在**才删除 | `SET @preparedStatement = (SELECT IF((SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE ...)>0, 'ALTER TABLE ... DROP INDEX ...', 'SELECT 1')); ...` |
+
 ## ⚙️ 配置说明
 
 | 配置项 | 说明 | 格式 / 示例 |
