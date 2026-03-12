@@ -11,7 +11,6 @@ data class EnvConfig(
     var specifiedPrimaryKeys: List<String>? = null,
     var excludeDataRows: List<String>? = null,
     var includeDataRows: List<String>? = null,
-    var specifiedDataQueries: List<String>? = null
 )
 
 data class EnvDbInfo(

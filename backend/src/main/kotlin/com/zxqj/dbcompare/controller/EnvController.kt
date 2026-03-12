@@ -65,7 +65,6 @@ class EnvController {
             ignoreDataTables = config.ignoreDataTables,
             specifiedPrimaryKeys = config.specifiedPrimaryKeys,
             excludeDataRows = config.excludeDataRows,
-            specifiedDataQueries = config.specifiedDataQueries
         )
         
         val filename = "${config.name}_local.yml"

@@ -307,6 +307,14 @@ class SqlGenerationService {
         val defStr = if (col.defaultValue != null) {
             if ("VARCHAR".equals(type.uppercase())) {
                 "DEFAULT \"${col.defaultValue}\""
+            } else if ("BIT".equals(type.uppercase())) {
+                val defVal = col.defaultValue!!
+                // Use regex to check for bit literal format like b'0', b'1'
+                if (defVal.matches(Regex("^b'[01]+'$", RegexOption.IGNORE_CASE))) {
+                    "DEFAULT ${defVal.replace("'", "''")}"
+                } else {
+                    "DEFAULT $defVal"
+                }
             } else {
                 "DEFAULT ${col.defaultValue}"
             }

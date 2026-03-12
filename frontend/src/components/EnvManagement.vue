@@ -222,10 +222,6 @@
               <label class="text-sm font-medium text-gray-600">Include Data Rows</label>
               <AutoComplete v-model="form.includeDataRows" multiple :typeahead="false" placeholder="table(col=val), table(col1#col2=val1#val2)" fluid />
             </div>
-            <div class="flex flex-col gap-2">
-              <label class="text-sm font-medium text-gray-600">Specified Data Queries</label>
-              <AutoComplete v-model="form.specifiedDataQueries" multiple :typeahead="false" placeholder="table=select * from table where ..." fluid />
-            </div>
           </div>
         </template>
       </Card>
@@ -294,8 +290,7 @@ const form = reactive<EnvConfig>({
   ignoreDataTables: [],
   specifiedPrimaryKeys: [],
   excludeDataRows: [],
-  includeDataRows: [],
-  specifiedDataQueries: []
+  includeDataRows: []
 });
 
 // Watch separateCodePath to sync source with target if disabled
