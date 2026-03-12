@@ -94,13 +94,21 @@ npm run dev
 
 ### 树表配置示例
 假设有一张菜单表 `system_menu`，结构如下：
-- `id` (主键)
-- `name` (菜单名称，业务唯一)
+- `id` (主键，自增序列)
+- `name` (菜单名称，业务唯一，可作为数据对比的主键)
 - `parent_id` (父菜单ID)
+- `path` (路径，业务字段)
 
 在对比配置中：
 1. **Tree Table Config**: `system_menu(id, parent_id)`
 2. **Specified Primary Keys**: `system_menu(name)`
+
+查询数据时将自动将 parent_id 映射，避免使用 ID 对比：
+```sql
+SELECT m.name, m.path, p.name AS __parent_name
+FROM system_menu m
+LEFT JOIN system_menu p on m.parent_id = p.id;
+```
 
 生成的插入语句将自动处理 ID 映射：
 ```sql

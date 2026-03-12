@@ -97,10 +97,18 @@ Assuming a menu table `system_menu` with the following structure:
 - `id` (Primary Key)
 - `name` (Menu Name, Business Unique Key)
 - `parent_id` (Parent Menu ID)
+- `path` (Path, Business Field)
 
 In the comparison configuration:
 1. **Tree Table Config**: `system_menu(id, parent_id)`
 2. **Specified Primary Keys**: `system_menu(name)`
+
+When querying data, parent_id will be automatically mapped to avoid comparing by ID:
+```sql
+SELECT m.name, m.path, p.name AS __parent_name
+FROM system_menu m
+LEFT JOIN system_menu p on m.parent_id = p.id;
+```
 
 The generated insertion statement will automatically handle ID mapping:
 ```sql
