@@ -114,16 +114,17 @@
               <AutoComplete v-model="form.specifiedPrimaryKeys" multiple :typeahead="false" placeholder="table(col1,col2)" fluid />
             </div>
             <div class="flex flex-col gap-2">
+              <label class="text-sm font-medium text-gray-600">Tree Table Config</label>
+              <AutoComplete v-model="form.treeTableConfig" multiple :typeahead="false" placeholder="table(id,parent_id)" fluid />
+              <small class="text-xs text-gray-500">Must configure Specified Primary Keys for tree tables.</small>
+            </div>
+            <div class="flex flex-col gap-2">
               <label class="text-sm font-medium text-gray-600">Exclude Data Rows</label>
               <AutoComplete v-model="form.excludeDataRows" multiple :typeahead="false" placeholder="table(col=val) or table(col1#col2=val1#val2)" fluid />
             </div>
             <div class="flex flex-col gap-2">
               <label class="text-sm font-medium text-gray-600">Include Data Rows</label>
               <AutoComplete v-model="form.includeDataRows" multiple :typeahead="false" placeholder="table(col=val) or table(col1#col2=val1#val2)" fluid />
-            </div>
-            <div class="flex flex-col gap-2">
-              <label class="text-sm font-medium text-gray-600">Specified Data Queries</label>
-              <AutoComplete v-model="form.specifiedDataQueries" multiple :typeahead="false" placeholder="table=select * from table where ..." fluid />
             </div>
           </div>
         </template>
@@ -178,7 +179,9 @@ const form = reactive<CompareRequest>({
   excludeTables: [],
   ignoreDataTables: [],
   specifiedPrimaryKeys: [],
-  specifiedDataQueries: []
+  treeTableConfig: [],
+  excludeDataRows: [],
+  includeDataRows: []
 });
 
 const loadConfigs = async () => {

@@ -20,9 +20,9 @@ export interface CompareRequest {
     excludeTables?: string[];
     ignoreDataTables?: string[];
     specifiedPrimaryKeys?: string[];
+    treeTableConfig?: string[];
     excludeDataRows?: string[];
     includeDataRows?: string[];
-    specifiedDataQueries?: string[];
 }
 
 export const checkConnection = (config: DbConfig) => {
@@ -84,7 +84,6 @@ export interface EnvConfig {
     specifiedPrimaryKeys?: string[];
     excludeDataRows?: string[];
     includeDataRows?: string[];
-    specifiedDataQueries?: string[];
 }
 
 export interface DockerParams {

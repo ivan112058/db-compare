@@ -8,6 +8,7 @@ data class TableDiff(
     var dataDiff: DataDiff? = null,
     var rowCount: RowCount? = null,
     var primaryKeys: List<String>? = null,
+    var treeConfig: TreeConfig? = null,
     var sourceDDL: String? = null,
     var targetDDL: String? = null
 ) {
@@ -20,5 +21,11 @@ data class TableDiff(
     data class RowCount(
         var source: Int = 0,
         var target: Int = 0
+    )
+
+    data class TreeConfig(
+        val idColumn: String,
+        val parentIdColumn: String,
+        val parentBusinessKeys: List<String>
     )
 }

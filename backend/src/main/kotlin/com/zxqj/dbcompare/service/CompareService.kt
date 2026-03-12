@@ -86,6 +86,7 @@ class CompareService(private val dbService: DatabaseService) {
         diff.rowCount = dataResult.rowCount
         diff.dataDiff = dataResult.dataDiff
         diff.primaryKeys = dataResult.primaryKeys
+        diff.treeConfig = dataResult.treeConfig
 
         // 3. Filter Result
         val hasStructDiff = diff.structDiff?.isEmpty() == false
@@ -118,7 +119,8 @@ class CompareService(private val dbService: DatabaseService) {
     private data class DataComparisonResult(
         val rowCount: TableDiff.RowCount,
         val dataDiff: TableDiff.DataDiff?,
-        val primaryKeys: List<String>?
+        val primaryKeys: List<String>?,
+        val treeConfig: TableDiff.TreeConfig? = null
     )
 
     private fun compareData(
@@ -135,9 +137,29 @@ class CompareService(private val dbService: DatabaseService) {
         var targetCount = 0
         var dataDiff: TableDiff.DataDiff? = null
         var primaryKeys: List<String>? = null
+        
+        // Check Tree Config
+        val treeConfig = getTreeConfig(tableName, request.treeTableConfig)
+        if (treeConfig != null) {
+            val specPKs = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, null)
+            if (specPKs.isNullOrEmpty()) {
+                 throw RuntimeException("Tree table '$tableName' must have specifiedPrimaryKeys configured.")
+            }
+        }
 
         val skipDataCompare = request.ignoreDataTables?.contains(tableName) ?: false
-        val customQuery = getTableQuery(tableName, request.specifiedDataQueries)
+        var customQuery: String? = null
+        
+        // Auto-generate Tree Query if needed
+        if (treeConfig != null) {
+             // We need to know business keys (specifiedPrimaryKeys)
+             // We can temporarily resolve PKs from request to build query
+             val specPKs = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, null)
+             if (!specPKs.isNullOrEmpty()) {
+                 val parentSelects = specPKs.joinToString(", ") { pk -> "p.`$pk` AS `__parent_$pk`" }
+                 customQuery = "SELECT m.*, $parentSelects FROM `$tableName` m LEFT JOIN `$tableName` p ON m.`${treeConfig.parentIdColumn}` = p.`${treeConfig.idColumn}`"
+             }
+        }
 
         if (inSource && inTarget) {
             if (skipDataCompare) {
@@ -145,8 +167,24 @@ class CompareService(private val dbService: DatabaseService) {
                 sourceCount = 0
                 targetCount = 0
             } else {
-                val rawSourceData = dbService.getTableData(sourceConn, tableName, customQuery)
-                val rawTargetData = dbService.getTableData(targetConn, tableName, customQuery)
+                var rawSourceData = dbService.getTableData(sourceConn, tableName, customQuery)
+                var rawTargetData = dbService.getTableData(targetConn, tableName, customQuery)
+                
+                // If Tree Config, swap parent_id with parent business keys
+                if (treeConfig != null) {
+                    val specPKs = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, sourceStruct)
+                    if (specPKs.isNullOrEmpty()) {
+                         throw RuntimeException("Tree table '$tableName' must have specifiedPrimaryKeys configured.")
+                    }
+                    rawSourceData = processTreeData(rawSourceData, treeConfig, specPKs)
+                    rawTargetData = processTreeData(rawTargetData, treeConfig, specPKs)
+                    
+                    // Update TreeConfig with actual business keys for later use
+                    // We need a way to pass business keys to SqlGenerationService
+                    // The treeConfig object in TableDiff is immutable, so we create a new one with keys
+                    // Actually, TableDiff.TreeConfig already has parentBusinessKeys list.
+                }
+
                 sourceCount = rawSourceData.size
                 targetCount = rawTargetData.size
 
@@ -167,8 +205,13 @@ class CompareService(private val dbService: DatabaseService) {
             if (inSource) {
                 sourceCount = dbService.getRowCount(sourceConn, tableName)
                 if (!skipDataCompare) {
-                    val rawData = dbService.getTableData(sourceConn, tableName, customQuery)
+                    var rawData = dbService.getTableData(sourceConn, tableName, customQuery)
                     primaryKeys = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, sourceStruct)
+                    
+                    if (treeConfig != null) {
+                         rawData = processTreeData(rawData, treeConfig, primaryKeys!!)
+                    }
+
                     val normalizedData = normalizeData(rawData, request.ignoreFields, tableName, primaryKeys)
                     
                     dataDiff = TableDiff.DataDiff().apply {
@@ -181,8 +224,13 @@ class CompareService(private val dbService: DatabaseService) {
             if (inTarget) {
                 targetCount = dbService.getRowCount(targetConn, tableName)
                 if (!skipDataCompare) {
-                    val rawData = dbService.getTableData(targetConn, tableName, customQuery)
+                    var rawData = dbService.getTableData(targetConn, tableName, customQuery)
                     primaryKeys = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, targetStruct)
+                    
+                    if (treeConfig != null) {
+                         rawData = processTreeData(rawData, treeConfig, primaryKeys!!)
+                    }
+
                     val normalizedData = normalizeData(rawData, request.ignoreFields, tableName, primaryKeys)
                     
                     dataDiff = TableDiff.DataDiff().apply {
@@ -193,11 +241,17 @@ class CompareService(private val dbService: DatabaseService) {
                 }
             }
         }
+        
+        // Final TreeConfig to return
+        val finalTreeConfig = if (treeConfig != null && !primaryKeys.isNullOrEmpty()) {
+             TableDiff.TreeConfig(treeConfig.idColumn, treeConfig.parentIdColumn, primaryKeys)
+        } else null
 
         return DataComparisonResult(
             rowCount = TableDiff.RowCount(sourceCount, targetCount),
             dataDiff = dataDiff,
-            primaryKeys = primaryKeys
+            primaryKeys = primaryKeys,
+            treeConfig = finalTreeConfig
         )
     }
 
@@ -480,12 +534,38 @@ class CompareService(private val dbService: DatabaseService) {
         return data.all { it[colName] == null }
     }
 
-    private fun getTableQuery(tableName: String, specifiedDataQueries: List<String>?): String? {
-        return specifiedDataQueries?.firstNotNullOfOrNull {
-            val parts = it.split("=", limit = 2)
-            if (parts.size == 2 && parts[0].trim() == tableName) {
-                parts[1].trim()
+    private fun getTreeConfig(tableName: String, treeTableConfig: List<String>?): TableDiff.TreeConfig? {
+        if (treeTableConfig.isNullOrEmpty()) return null
+        
+        return treeTableConfig.firstNotNullOfOrNull { config ->
+            val trimmedConfig = config.trim()
+            if (trimmedConfig.startsWith("$tableName(") && trimmedConfig.endsWith(")")) {
+                val content = trimmedConfig.substring(tableName.length + 1, trimmedConfig.length - 1)
+                val parts = content.split(",").map { it.trim() }
+                if (parts.size == 2) {
+                    TableDiff.TreeConfig(parts[0], parts[1], emptyList())
+                } else null
             } else null
+        }
+    }
+
+    private fun processTreeData(
+        data: List<Map<String, Any?>>,
+        treeConfig: TableDiff.TreeConfig,
+        specifiedPrimaryKeys: List<String>
+    ): List<Map<String, Any?>> {
+        if (data.isEmpty()) return data
+        
+        return data.map { row ->
+            val newRow = LinkedHashMap(row)
+            
+            // Remove the physical parent_id column as it is not suitable for cross-environment comparison.
+            // We will use the __parent_$pk columns (which contain business keys of the parent) for comparison instead.
+            newRow.remove(treeConfig.parentIdColumn)
+            
+            // Note: __parent_$pk columns are retained in the map and will participate in the data comparison process.
+            
+            newRow
         }
     }
 }

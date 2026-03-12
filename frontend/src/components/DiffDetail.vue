@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full flex flex-col p-0 bg-white" v-if="diff">
+    <div class="h-full flex flex-col p-0 bg-white" v-if="diff">
     <ScrollPanel style="width: 100%; height: 100%">
         <!-- Structure Diff -->
         <div v-if="diff.structDiff && ((diff.structDiff.columns && diff.structDiff.columns.length > 0) || (diff.structDiff.indexes && diff.structDiff.indexes.length > 0))" class="mb-8">
@@ -90,6 +90,9 @@
                       <span v-if="isPrimaryKey(key)" style="font-weight: bold; color: var(--p-primary-color);">
                         <i class="pi pi-key" style="font-size: 0.8rem; margin-right: 4px;"></i>{{ key }}
                       </span>
+                      <span v-else-if="key.startsWith('__parent_')" style="font-weight: bold; color: var(--p-text-color-secondary);">
+                        <i class="pi pi-sitemap" style="font-size: 0.8rem; margin-right: 4px;"></i>{{ key.substring(9) }}
+                      </span>
                       <span v-else>{{ key }}</span>
                     </template>
                   </Column>
@@ -110,6 +113,9 @@
                       <span v-if="isPrimaryKey(key)" style="font-weight: bold; color: var(--p-primary-color);">
                         <i class="pi pi-key" style="font-size: 0.8rem; margin-right: 4px;"></i>{{ key }}
                       </span>
+                      <span v-else-if="key.startsWith('__parent_')" style="font-weight: bold; color: var(--p-text-color-secondary);">
+                        <i class="pi pi-sitemap" style="font-size: 0.8rem; margin-right: 4px;"></i>{{ key.substring(9) }}
+                      </span>
                       <span v-else>{{ key }}</span>
                     </template>
                   </Column>
@@ -129,6 +135,9 @@
                     <template #header>
                       <span v-if="isPrimaryKey(key)" style="font-weight: bold; color: var(--p-primary-color);">
                         <i class="pi pi-key" style="font-size: 0.8rem; margin-right: 4px;"></i>{{ key }}
+                      </span>
+                      <span v-else-if="key.startsWith('__parent_')" style="font-weight: bold; color: var(--p-text-color-secondary);">
+                        <i class="pi pi-sitemap" style="font-size: 0.8rem; margin-right: 4px;"></i>{{ key.substring(9) }}
                       </span>
                       <span v-else>{{ key }}</span>
                     </template>
@@ -225,7 +234,8 @@ const copySql = () => {
 const getKeys = (rows: any[]) => {
   if (!rows || rows.length === 0) return [];
   // Filter out internal fields like _source
-  return Object.keys(rows[0]).filter(k => !k.startsWith('_'));
+  // BUT KEEP __parent_ fields for display
+  return Object.keys(rows[0]).filter(k => !k.startsWith('_') || k.startsWith('__parent_'));
 };
 
 const isPrimaryKey = (key: string) => {
