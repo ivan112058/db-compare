@@ -1,20 +1,14 @@
 package com.zxqj.dbcompare.model.structure
 
 data class Column(
-    var name: String? = null,
-    var typeName: String? = null,
-    var columnSize: Int = 0,
-    var decimalDigits: Int = 0,
-    var isNullable: Boolean = false,
-    var isAutoIncrement: Boolean = false,
-    var defaultValue: String? = null
+    val name: String? = null,
+    val typeName: String? = null,
+    val columnSize: Int = 0,
+    val decimalDigits: Int = 0,
+    val isNullable: Boolean = false,
+    val isAutoIncrement: Boolean = false,
+    val defaultValue: String? = null
 ) {
-    override fun toString(): String {
-        return String.format("%s %s(%d,%d) %s %s DEFAULT %s",
-            name, typeName, columnSize, decimalDigits,
-            if (isNullable) "NULL" else "NOT NULL",
-            if (isAutoIncrement) "AUTO_INCREMENT" else "",
-            defaultValue
-        )
-    }
+    override fun toString(): String =
+        "$name $typeName($columnSize,$decimalDigits) ${if (isNullable) "NULL" else "NOT NULL"} ${if (isAutoIncrement) "AUTO_INCREMENT" else ""} DEFAULT $defaultValue"
 }

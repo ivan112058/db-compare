@@ -5,34 +5,28 @@ import com.zxqj.dbcompare.model.structure.Column
 import com.zxqj.dbcompare.model.structure.Index
 import com.zxqj.dbcompare.model.structure.PrimaryKey
 import com.zxqj.dbcompare.model.structure.TableStructure
-import org.springframework.stereotype.Service
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
-import java.util.*
+import java.util.TreeMap
 
-@Service
 class DatabaseService {
 
     @Throws(SQLException::class)
-    fun connect(config: DbConfig): Connection {
-        return DriverManager.getConnection(config.jdbcUrl, config.username, config.password)
-    }
+    fun connect(config: DbConfig): Connection =
+        DriverManager.getConnection(config.jdbcUrl, config.username, config.password)
 
     @Throws(SQLException::class)
     fun getTableNames(conn: Connection, databaseName: String?): List<String> {
-        val tables = ArrayList<String>()
         val sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name"
-        
         conn.prepareStatement(sql).use { stmt ->
             stmt.setString(1, databaseName)
             stmt.executeQuery().use { rs ->
-                while (rs.next()) {
-                    tables.add(rs.getString("table_name"))
+                return buildList {
+                    while (rs.next()) add(rs.getString("table_name"))
                 }
             }
         }
-        return tables
     }
 
     @Throws(SQLException::class)
@@ -40,71 +34,51 @@ class DatabaseService {
         val structure = TableStructure(tableName)
         val meta = conn.metaData
         val catalog = conn.catalog
-        val schema: String? = null
 
-        // 1. Columns
-        meta.getColumns(catalog, schema, tableName, null).use { rs ->
+        // Columns
+        meta.getColumns(catalog, null, tableName, null).use { rs ->
             while (rs.next()) {
-                val name = rs.getString("COLUMN_NAME")
-                val typeName = rs.getString("TYPE_NAME")
-                val size = rs.getInt("COLUMN_SIZE")
-                val digits = rs.getInt("DECIMAL_DIGITS")
-                val isNullable = "YES" == rs.getString("IS_NULLABLE")
-                var def = rs.getString("COLUMN_DEF")
-                var isAuto = false
-                try {
-                    isAuto = "YES" == rs.getString("IS_AUTOINCREMENT")
-                } catch (e: SQLException) {
-                    // Ignore if column not found
-                }
-
-                val col = Column(name, typeName, size, digits, isNullable, isAuto, def)
+                val col = Column(
+                    name = rs.getString("COLUMN_NAME"),
+                    typeName = rs.getString("TYPE_NAME"),
+                    columnSize = rs.getInt("COLUMN_SIZE"),
+                    decimalDigits = rs.getInt("DECIMAL_DIGITS"),
+                    isNullable = "YES" == rs.getString("IS_NULLABLE"),
+                    isAutoIncrement = try { "YES" == rs.getString("IS_AUTOINCREMENT") } catch (_: SQLException) { false },
+                    defaultValue = rs.getString("COLUMN_DEF")
+                )
                 structure.addColumn(col)
             }
         }
 
-        // 2. Primary Key
-        var pkName: String? = null
+        // Primary Key
         val pkColMap = TreeMap<Int, String>()
-
-        meta.getPrimaryKeys(catalog, schema, tableName).use { rs ->
+        var pkName: String? = null
+        meta.getPrimaryKeys(catalog, null, tableName).use { rs ->
             while (rs.next()) {
                 pkName = rs.getString("PK_NAME")
-                val colName = rs.getString("COLUMN_NAME")
-                val seq = rs.getShort("KEY_SEQ").toInt()
-                pkColMap[seq] = colName
+                pkColMap[rs.getShort("KEY_SEQ").toInt()] = rs.getString("COLUMN_NAME")
             }
         }
         if (pkColMap.isNotEmpty()) {
-            structure.primaryKey = PrimaryKey(pkName, ArrayList(pkColMap.values))
+            structure.primaryKey = PrimaryKey(pkName, pkColMap.values.toList())
         }
 
-        // 3. Indexes
+        // Indexes
         val indexCols = HashMap<String, TreeMap<Int, String>>()
         val indexUnique = HashMap<String, Boolean>()
 
-        meta.getIndexInfo(catalog, schema, tableName, false, false).use { rs ->
+        meta.getIndexInfo(catalog, null, tableName, false, false).use { rs ->
             while (rs.next()) {
                 val indexName = rs.getString("INDEX_NAME") ?: continue
-                
-                val nonUnique = rs.getBoolean("NON_UNIQUE")
-                val colName = rs.getString("COLUMN_NAME")
-                val seq = rs.getShort("ORDINAL_POSITION").toInt()
-
-                indexUnique[indexName] = !nonUnique
-
-                indexCols.computeIfAbsent(indexName) { TreeMap() }[seq] = colName
+                indexUnique[indexName] = !rs.getBoolean("NON_UNIQUE")
+                indexCols.getOrPut(indexName) { TreeMap() }[rs.getShort("ORDINAL_POSITION").toInt()] = rs.getString("COLUMN_NAME")
             }
         }
 
         for ((name, value) in indexCols) {
-            // Skip PK if it's the same name. MySQL PK is usually "PRIMARY"
-            if (structure.primaryKey != null && "PRIMARY" == name) {
-                continue
-            }
-            val cols = ArrayList(value.values)
-            val unique = indexUnique[name] ?: false
-            structure.addIndex(Index(name, unique, cols))
+            if (structure.primaryKey != null && "PRIMARY" == name) continue
+            structure.addIndex(Index(name, indexUnique[name] ?: false, value.values.toList()))
         }
 
         return structure
@@ -112,49 +86,39 @@ class DatabaseService {
 
     @Throws(SQLException::class)
     fun getRowCount(conn: Connection, tableName: String): Int {
-        val sql = "SELECT COUNT(*) FROM $tableName"
         conn.createStatement().use { stmt ->
-            stmt.executeQuery(sql).use { rs ->
-                if (rs.next()) {
-                    return rs.getInt(1)
-                }
+            stmt.executeQuery("SELECT COUNT(*) FROM $tableName").use { rs ->
+                return if (rs.next()) rs.getInt(1) else 0
             }
         }
-        return 0
     }
 
     @Throws(SQLException::class)
     fun getTableData(conn: Connection, tableName: String, customQuery: String? = null): List<Map<String, Any?>> {
-        val data = ArrayList<Map<String, Any?>>()
-        val sql = customQuery ?: "SELECT * FROM $tableName" // Should ideally order by Primary Key
-        
+        val sql = customQuery ?: "SELECT * FROM $tableName"
         conn.createStatement().use { stmt ->
             stmt.executeQuery(sql).use { rs ->
-                val metaData = rs.metaData
-                val columnCount = metaData.columnCount
-
-                while (rs.next()) {
-                    val row = LinkedHashMap<String, Any?>()
-                    for (i in 1..columnCount) {
-                        row[metaData.getColumnLabel(i)] = rs.getObject(i)
+                val meta = rs.metaData
+                val columnCount = meta.columnCount
+                return buildList {
+                    while (rs.next()) {
+                        val row = LinkedHashMap<String, Any?>()
+                        for (i in 1..columnCount) {
+                            row[meta.getColumnLabel(i)] = rs.getObject(i)
+                        }
+                        add(row)
                     }
-                    data.add(row)
                 }
             }
         }
-        return data
     }
 
     @Throws(SQLException::class)
     fun getCreateTableSql(conn: Connection, tableName: String): String {
-        val sql = "SHOW CREATE TABLE $tableName"
         conn.createStatement().use { stmt ->
-            stmt.executeQuery(sql).use { rs ->
-                if (rs.next()) {
-                    return rs.getString(2) // The second column contains the Create Table SQL
-                }
+            stmt.executeQuery("SHOW CREATE TABLE $tableName").use { rs ->
+                return if (rs.next()) rs.getString(2) else ""
             }
         }
-        return ""
     }
 }

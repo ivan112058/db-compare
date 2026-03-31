@@ -3,7 +3,7 @@ package com.zxqj.dbcompare.model
 import com.zxqj.dbcompare.model.structure.StructureDiff
 
 data class TableDiff(
-    var tableName: String,
+    val tableName: String,
     var structDiff: StructureDiff? = null,
     var dataDiff: DataDiff? = null,
     var rowCount: RowCount? = null,

@@ -5,13 +5,13 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class DbConfig(
-    var host: String? = null,
-    var port: Int = 0,
-    var username: String? = null,
-    var password: String? = null,
-    var database: String? = null
+    val host: String? = null,
+    val port: Int = 0,
+    val username: String? = null,
+    val password: String? = null,
+    val database: String? = null
 ) {
     @get:JsonIgnore
     val jdbcUrl: String
-        get() = String.format("jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai", host, port, database)
+        get() = "jdbc:mysql://$host:$port/$database?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai"
 }

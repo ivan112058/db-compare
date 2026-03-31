@@ -1,13 +1,13 @@
 package com.zxqj.dbcompare.model
 
 data class CompareRequest(
-    var source: DbConfig? = null,
-    var target: DbConfig? = null,
-    var ignoreFields: List<String>? = null,
-    var excludeTables: List<String>? = null,
-    var ignoreDataTables: List<String>? = null,
-    var specifiedPrimaryKeys: List<String>? = null,
-    var treeTableConfig: List<String>? = null,
-    var excludeDataRows: List<String>? = null,
-    var includeDataRows: List<String>? = null
+    val source: DbConfig? = null,
+    val target: DbConfig? = null,
+    val ignoreFields: List<String>? = null,
+    val excludeTables: List<String>? = null,
+    val ignoreDataTables: List<String>? = null,
+    val specifiedPrimaryKeys: List<String>? = null,
+    val treeTableConfig: List<String>? = null,
+    val excludeDataRows: List<String>? = null,
+    val includeDataRows: List<String>? = null
 )

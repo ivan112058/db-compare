@@ -1,11 +1,9 @@
 package com.zxqj.dbcompare.service
 
 import com.zxqj.dbcompare.model.TableDiff
-import org.springframework.stereotype.Service
-import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
-@Service
 class ResultCacheService {
     private val cache = ConcurrentHashMap<String, List<TableDiff>>()
 
@@ -15,12 +13,8 @@ class ResultCacheService {
         return id
     }
 
-    fun getResult(id: String): List<TableDiff>? {
-        return cache[id]
-    }
-    
-    fun getTableDiff(id: String, tableName: String): TableDiff? {
-        val diffs = cache[id] ?: return null
-        return diffs.find { it.tableName == tableName }
-    }
+    fun getResult(id: String): List<TableDiff>? = cache[id]
+
+    fun getTableDiff(id: String, tableName: String): TableDiff? =
+        cache[id]?.find { it.tableName == tableName }
 }

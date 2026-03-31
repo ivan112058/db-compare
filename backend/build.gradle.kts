@@ -1,15 +1,17 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    id("org.springframework.boot") version "3.2.1"
-    id("io.spring.dependency-management") version "1.1.4"
     kotlin("jvm") version "2.3.0"
-    kotlin("plugin.spring") version "2.3.0"
+    application
 }
 
 group = "com.zxqj"
 version = "0.0.1"
+
+application {
+    mainClass.set("com.zxqj.dbcompare.ApplicationKt")
+}
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
@@ -20,25 +22,30 @@ repositories {
 }
 
 dependencies {
-    implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.springframework.boot:spring-boot-starter-jdbc")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib")
-    implementation("com.mysql:mysql-connector-j")
+    // Ktor
+    val ktorVersion = "2.3.7"
+    implementation("io.ktor:ktor-server-core-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-netty-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-serialization-jackson-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-cors-jvm:$ktorVersion")
+
+    // Database
+    implementation("com.mysql:mysql-connector-j:8.3.0")
+
+    // YAML
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.17.2")
+
+    // Utilities
     implementation("com.google.guava:guava:33.0.0-jre")
     implementation("org.apache.commons:commons-text:1.11.0")
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
+
+    // Logging
+    implementation("ch.qos.logback:logback-classic:1.5.16")
 }
 
 tasks.withType<KotlinCompile>().configureEach {
     compilerOptions {
-        freeCompilerArgs.add("-Xjsr305=strict")
         jvmTarget.set(JvmTarget.JVM_21)
     }
-}
-
-tasks.withType<Test> {
-    useJUnitPlatform()
 }
