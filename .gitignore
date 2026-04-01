@@ -8,7 +8,7 @@ dist-ssr/
 *.local
 .gradle/
 .kotlin/
-backend/build/
+dbc/build/
 
 # ====================
 # Dependencies
@@ -64,5 +64,5 @@ yarn-error.log*
 # ====================
 package-lock.json.bak
 
-backend/config/
+dbc/config/
 config/

@@ -63,21 +63,19 @@ DB Compare 生成的 Upgrade 和 Rollback 脚本均采用**幂等性设计**。�
 
 ### Backend
 - **Language**: Kotlin
-- **Framework**: Spring Boot 3
+- **Framework**: Ktor 2.3.7
 - **Build Tool**: Gradle
 - **Database**: MySQL
 
 ### Frontend
-- **Framework**: Vue 3
-- **Build Tool**: Vite
-- **UI Library**: PrimeVue 4, Tailwind CSS
-- **Language**: TypeScript
+- **Framework**: Datastar
+- **UI Library**: Oat
+- **Build**: 无 (静态 HTML)
 
 ## 🚀 快速开始
 
 ### 环境要求
-- JDK 17+
-- Node.js 18+
+- JDK 21+
 - MySQL 8.0+
 
 ### 安装与运行
@@ -85,22 +83,10 @@ DB Compare 生成的 Upgrade 和 Rollback 脚本均采用**幂等性设计**。�
 #### 1. 启动后端
 
 ```bash
-cd backend
-# 运行 Spring Boot 应用
-./gradlew bootRun
+# 运行 Ktor 应用
+./gradlew :dbc:run
 ```
-后端服务默认启动在 `http://localhost:8080`。
-
-#### 2. 启动前端
-
-```bash
-cd frontend
-# 安装依赖
-npm install
-# 启动开发服务器
-npm run dev
-```
-前端页面默认访问地址 `http://localhost:5173`。
+应用默认启动在 `http://localhost:8080`。
 
 ## 💡 使用示例
 
@@ -135,12 +121,12 @@ WHERE name = '系统设置';
 
 ```
 db-compare/
-├── backend/                 # 后端代码 (Kotlin + Spring Boot)
+├── gradle/                  # Gradle wrapper
+├── dbc/                     # 数据库比较服务 (Kotlin + Ktor)
 │   ├── src/main/kotlin/     # 源代码
 │   └── src/main/resources/  # 配置文件
-├── frontend/                # 前端代码 (Vue 3)
-│   ├── src/components/      # Vue 组件
-│   └── src/api/             # API 接口定义
+├── docs/                    # 文档
+├── settings.gradle.kts      # Gradle 配置
 └── README.md                # 项目说明文档
 ```
 
