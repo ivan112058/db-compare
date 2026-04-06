@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB Compare</title>
+    <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
+    <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
+    <script type="module"
+        src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.8/bundles/datastar.js"></script>
+</head>
+</head>
+
+<body data-signals="{view: 'config'}" style="max-width: 1100px; margin: 0 auto; padding: 1rem;">
+    <article class="card" data-show="$view === 'config'" style="display: none" data-init__viewtransition="@get('/api/config/list')">
+        <header>
+            <h3>Configuration</h3>
+        </header>
+        <div class="container row">
+            <div class="col-6">
+                <label>Load Config</label>
+                <select id="config-select"></select>
+            </div>
+            <div class="col-6">
+                <label>Save Config</label>
+                <fieldset class="group">
+                    <input type="text" id="config-name" />
+                    <button>Save</button>
+                </fieldset>
+            </div>
+        </div>
+    </article>
+</body>
+
+</html>

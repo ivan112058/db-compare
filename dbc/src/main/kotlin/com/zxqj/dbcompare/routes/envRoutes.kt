@@ -5,17 +5,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.zxqj.dbcompare.model.CompareRequest
 import com.zxqj.dbcompare.model.EnvConfig
-import io.ktor.http.*
+import com.zxqj.dbcompare.model.EnvDbInfo
 import io.ktor.server.application.*
 import io.ktor.server.request.*
-import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.delay
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 data class DockerParams(
     val codePath: String,
@@ -27,28 +21,47 @@ data class DockerParams(
     val gitRef: String? = null
 )
 
+private data class EnvFilenamePayload(
+    val filename: String = ""
+)
+
+private data class DockerCommandPayload(
+    val type: String = "",
+    val side: EnvDbInfo = EnvDbInfo()
+)
+
 fun Route.envRoutes() {
     val configDir = File(System.getProperty("user.dir"), "config").apply { mkdirs() }
     val envDir = File(configDir, "env").apply { mkdirs() }
     val yamlMapper = ObjectMapper(YAMLFactory()).apply { findAndRegisterModules() }
 
     route("/env") {
-        get("/list") {
-            val files = envDir.listFiles { file ->
-                file.isFile && file.name.endsWith(".yml")
-            }?.map { it.name } ?: emptyList()
-            call.respond(files)
+        post("/list") {
+            call.respondDataStar {
+                patchSignalsJson(mapOf("envFiles" to listEnvFiles(envDir)))
+            }
         }
 
-        get("/load") {
-            val filename = call.request.queryParameters["filename"]
-                ?: return@get call.respond(mapOf("error" to "filename parameter required"))
+        post("/load") {
+            val payload = runCatching { call.receive<EnvFilenamePayload>() }.getOrDefault(EnvFilenamePayload())
+            val filename = normalizeYamlName(payload.filename)
             val file = File(envDir, filename)
             if (!file.exists()) {
-                return@get call.respond(mapOf("error" to "Env config file not found: $filename"))
+                call.respondDataStar {
+                    toast("Env config file not found: $filename", "error")
+                }
+                return@post
             }
             val config = yamlMapper.readValue(file, EnvConfig::class.java)
-            call.respond(config)
+            call.respondDataStar {
+                patchSignalsJson(
+                    mapOf(
+                        "selectedEnv" to filename,
+                        "env" to config
+                    )
+                )
+                toast("Env loaded", "success")
+            }
         }
 
         post("/save") {
@@ -56,7 +69,16 @@ fun Route.envRoutes() {
             val filename = "${config.name}.yml"
             val file = File(envDir, filename)
             yamlMapper.writeValue(file, config)
-            call.respond(mapOf("success" to true, "filename" to filename))
+            call.respondDataStar {
+                patchSignalsJson(
+                    mapOf(
+                        "envFiles" to listEnvFiles(envDir),
+                        "selectedEnv" to filename,
+                        "env" to config
+                    )
+                )
+                toast("Env saved", "success")
+            }
         }
 
         post("/generate") {
@@ -73,57 +95,76 @@ fun Route.envRoutes() {
             val filename = "${config.name}_local.yml"
             val file = File(configDir, filename)
             yamlMapper.writeValue(file, compareRequest)
-            call.respond(mapOf("success" to true, "filename" to filename))
+            call.respondDataStar {
+                toast("Generated: $filename", "success")
+            }
         }
 
         post("/docker/start") {
-            val params = call.receive<DockerParams>()
-            val effectiveParams = if (!params.gitRef.isNullOrEmpty()) {
-                prepareIsolatedEnvironment(params)
-            } else params
-            val result = runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
-            call.respond(result)
-        }
-
-        post("/docker/stop") {
-            val params = call.receive<DockerParams>()
-            val result = runDockerCompose(params, "down")
-            call.respond(result)
-        }
-
-        post("/docker/status") {
-            val params = call.receive<DockerParams>()
-            val result = try {
-                val isRunning = checkContainerStatus(
-                    params.codePath, params.composePath, params.prefix, params.serviceName
-                )
-                mapOf("success" to true, "running" to isRunning)
+            try {
+                val payload = call.receive<DockerCommandPayload>()
+                val params = payload.side.toDockerParams()
+                val effectiveParams = if (!params.gitRef.isNullOrEmpty()) {
+                    prepareIsolatedEnvironment(params)
+                } else {
+                    params
+                }
+                runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
+                val isRunning = resolveRunning(effectiveParams)
+                call.respondDataStar {
+                    patchSignalsJson(
+                        mapOf(
+                            "${payload.type}Status" to isRunning,
+                            "dockerLoading" to false
+                        )
+                    )
+                    toast("${payload.type} started", "success")
+                }
             } catch (e: Exception) {
-                mapOf("success" to false, "error" to (e.message ?: "Unknown error"))
-            }
-            call.respond(result)
-        }
-
-        get("/docker/status/stream") {
-            val codePath = call.request.queryParameters["codePath"] ?: ""
-            val composePath = call.request.queryParameters["composePath"] ?: ""
-            val prefix = call.request.queryParameters["prefix"] ?: ""
-            val serviceName = call.request.queryParameters["serviceName"] ?: ""
-
-            call.respondTextWriter(contentType = ContentType.Text.EventStream) {
-                while (true) {
-                    try {
-                        val isRunning = checkContainerStatus(codePath, composePath, prefix, serviceName)
-                        write("event: status\ndata: {\"running\":$isRunning}\n\n")
-                        flush()
-                    } catch (e: Exception) {
-                        write("event: error\ndata: ${e.message ?: "Unknown error"}\n\n")
-                        flush()
-                    }
-                    Thread.sleep(3000)
+                call.respondDataStar {
+                    patchSignalsJson(mapOf("dockerLoading" to false))
+                    toast(e.message ?: "Failed to start docker", "error")
                 }
             }
         }
+
+        post("/docker/stop") {
+            try {
+                val payload = call.receive<DockerCommandPayload>()
+                val params = payload.side.toDockerParams()
+                runDockerCompose(params, "down")
+                val isRunning = resolveRunning(params)
+                call.respondDataStar {
+                    patchSignalsJson(
+                        mapOf(
+                            "${payload.type}Status" to isRunning,
+                            "dockerLoading" to false
+                        )
+                    )
+                    toast("${payload.type} stopped", "success")
+                }
+            } catch (e: Exception) {
+                call.respondDataStar {
+                    patchSignalsJson(mapOf("dockerLoading" to false))
+                    toast(e.message ?: "Failed to stop docker", "error")
+                }
+            }
+        }
+
+        post("/docker/status") {
+            val config = call.receive<EnvConfig>()
+            val sourceStatus = resolveRunning(config.source.toDockerParams())
+            val targetStatus = resolveRunning(config.target.toDockerParams())
+            call.respondDataStar {
+                patchSignalsJson(
+                    mapOf(
+                        "sourceStatus" to sourceStatus,
+                        "targetStatus" to targetStatus
+                    )
+                )
+            }
+        }
+
     }
 }
 
@@ -192,6 +233,34 @@ private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
     val newComposePath = File(tempDir, relComposePath).absolutePath
     return params.copy(codePath = tempDir.absolutePath, composePath = newComposePath)
 }
+
+private fun listEnvFiles(envDir: File): List<String> =
+    envDir.listFiles { file ->
+        file.isFile && file.name.endsWith(".yml")
+    }?.map { it.name }?.sorted() ?: emptyList()
+
+private fun normalizeYamlName(filename: String): String =
+    filename.trim().let { if (it.endsWith(".yml")) it else "$it.yml" }
+
+private fun EnvDbInfo.toDockerParams(): DockerParams =
+    DockerParams(
+        codePath = codePath,
+        composePath = composePath,
+        prefix = containerPrefix,
+        serviceName = serviceName,
+        port = port,
+        excludeInitSql = excludeInitSql,
+        gitRef = gitRef
+    )
+
+private fun resolveRunning(params: DockerParams): Boolean =
+    if (params.composePath.isBlank() || params.serviceName.isBlank()) {
+        false
+    } else {
+        runCatching {
+            checkContainerStatus(params.codePath, params.composePath, params.prefix, params.serviceName)
+        }.getOrDefault(false)
+    }
 
 private fun runGitCommand(dir: File, vararg args: String): String {
     val pb = ProcessBuilder("git", *args).directory(dir)
@@ -331,7 +400,7 @@ private fun createModifiedComposeFile(params: DockerParams): File {
                 }
             }
         }
-        serviceNode.set<com.fasterxml.jackson.databind.node.ArrayNode>("volumes", newVolumesArray)
+        serviceNode.replace("volumes", newVolumesArray)
     }
 
     val tempFile = File.createTempFile("docker-compose-${params.prefix}-", ".yml")

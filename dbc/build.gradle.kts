@@ -29,6 +29,7 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")
     implementation("io.ktor:ktor-serialization-jackson-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-cors-jvm:$ktorVersion")
+    implementation("dev.data-star.kotlin:kotlin-sdk:1.0.0-RC3")
 
     // Database
     implementation("com.mysql:mysql-connector-j:8.3.0")

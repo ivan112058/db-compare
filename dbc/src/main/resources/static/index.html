@@ -6,7 +6,6 @@
   <title>DB Compare</title>
   <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
   <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
-  <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.8/bundles/datastar.js"></script>
   <style>
     body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
     .container { max-width: 1100px; margin: 0 auto; padding: 1rem; }
@@ -51,7 +50,7 @@
     input, select { width: 100%; box-sizing: border-box; }
   </style>
 </head>
-<body data-signals="{view:'config',resultId:'',tables:[],selectedTable:null,detail:null,loading:false,sqlType:'upgrade',upgradeSql:'',rollbackSql:'',configFiles:[],selectedConfig:'',envFiles:[],selectedEnv:'',env:{name:'',source:{port:3307,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},target:{port:3308,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},separateCodePath:false,ignoreFields:[],excludeTables:[],ignoreDataTables:[],specifiedPrimaryKeys:[],excludeDataRows:[],includeDataRows:[]},sourceStatus:false,targetStatus:false,dockerLoading:false}">
+<body data-signals="{view:'config',resultId:'',tables:[],selectedTable:null,detail:null,loading:false,sqlType:'upgrade',upgradeSql:'',rollbackSql:'',configFiles:[],selectedConfig:'',saveConfigName:'',source:{host:'localhost',port:3406,username:'root',password:'',database:''},target:{host:'localhost',port:3306,username:'root',password:'',database:''},ignoreFields:'',excludeTables:'',ignoreDataTables:'',specifiedPrimaryKeys:'',treeTableConfig:'',excludeDataRows:'',includeDataRows:'',envFiles:[],selectedEnv:'',env:{name:'',source:{port:3307,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},target:{port:3308,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},separateCodePath:false,ignoreFields:[],excludeTables:[],ignoreDataTables:[],specifiedPrimaryKeys:[],excludeDataRows:[],includeDataRows:[]},sourceStatus:false,targetStatus:false,dockerLoading:false}" data-init="@post('/api/config/list'); @post('/api/env/list')">
 
   <header style="background:#1e293b;color:white;padding:0.75rem 1.5rem;display:flex;justify-content:space-between;align-items:center;">
     <h1 style="margin:0;font-size:1.2rem;font-weight:600;">DB Compare</h1>
@@ -71,9 +70,8 @@
           <div class="flex-col">
             <label>Load Config</label>
             <div class="flex">
-              <select data-bind="selectedConfig" data-on:change="loadConfig()" style="flex:1">
+              <select data-bind="selectedConfig" data-on:change="@post('/api/config/load', {payload:{filename:$selectedConfig}})" data-effect="renderSelectOptions(el, $configFiles, $selectedConfig, '-- select --')" style="flex:1">
                 <option value="">-- select --</option>
-                <option data-each="configFiles" data-bind:option="el" data-text="el"></option>
               </select>
             </div>
           </div>
@@ -81,7 +79,7 @@
             <label>Save Config</label>
             <div class="flex">
               <input data-bind="saveConfigName" placeholder="config name" style="flex:1">
-              <button data-on:click="saveConfig()">Save</button>
+              <button data-on:click="@post('/api/config/save', {payload:buildConfigSavePayload()})">Save</button>
             </div>
           </div>
         </div>
@@ -134,7 +132,7 @@
       </div>
 
       <div class="mt-2" style="text-align:center;">
-        <button data-on:click="startCompare()" data-attr:disabled="$loading" style="padding:0.75rem 2rem;font-size:1rem;">
+        <button data-on:click="$loading = true; @post('/api/compare', {payload:buildComparePayload()})" data-attr:disabled="$loading" style="padding:0.75rem 2rem;font-size:1rem;">
           <span data-show="!$loading">Start Compare</span>
           <span data-show="$loading">Comparing...</span>
         </button>
@@ -148,19 +146,11 @@
         <div class="card" style="width:280px;flex-shrink:0;display:flex;flex-direction:column;">
           <h3 style="margin:0 0 0.5rem">Tables</h3>
           <div style="flex:1;overflow-y:auto;">
-            <ul class="table-list">
-              <li data-each="$tables" data-on:click="selectTable(el.tableName)" data-class="{active:$selectedTable===el.tableName}">
-                <span data-text="el.tableName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;"></span>
-                <span>
-                  <span data-show="el.hasStructDiff" class="badge badge-warn">S</span>
-                  <span data-show="el.hasDataDiff" class="badge badge-danger">D</span>
-                </span>
-              </li>
-            </ul>
+            <ul class="table-list" data-effect="renderTableList(el, $tables, $selectedTable)"></ul>
           </div>
           <div class="mt-1 text-sm flex" style="justify-content:space-between;padding:0.5rem 0 0;border-top:1px solid #e5e7eb;">
-            <span>Struct: <span class="badge badge-warn" data-text="countStructDiffs()"></span></span>
-            <span>Data: <span class="badge badge-danger" data-text="countDataDiffs()"></span></span>
+            <span>Struct: <span class="badge badge-warn" data-text="$tables.filter(t => t.hasStructDiff).length"></span></span>
+            <span>Data: <span class="badge badge-danger" data-text="$tables.filter(t => t.hasDataDiff).length"></span></span>
           </div>
           <div class="mt-1 flex">
             <button data-on:click="downloadSql('upgrade')" style="flex:1">Upgrade SQL</button>
@@ -176,7 +166,7 @@
           <div data-show="$loading" style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;">
             Loading...
           </div>
-          <div data-show="$detail && !$loading" id="detail-content"></div>
+          <div data-show="$detail && !$loading" data-effect="renderDetail(el, $detail)"></div>
         </div>
       </div>
     </div>
@@ -186,12 +176,11 @@
       <div class="card mb-2">
         <div class="flex" style="justify-content:space-between;">
           <div class="flex">
-            <select data-bind="selectedEnv" data-on:change="loadEnv()" style="width:200px">
+            <select data-bind="selectedEnv" data-on:change="@post('/api/env/load', {payload:{filename:$selectedEnv}})" data-effect="renderSelectOptions(el, $envFiles, $selectedEnv, '-- env config --')" style="width:200px">
               <option value="">-- env config --</option>
-              <option data-each="envFiles" data-bind:option="el" data-text="el"></option>
             </select>
-            <button data-on:click="saveEnv()">Save</button>
-            <button data-on:click="generateConfig()">Generate</button>
+            <button data-on:click="@post('/api/env/save', {payload:$env})">Save</button>
+            <button data-on:click="@post('/api/env/generate', {payload:$env})">Generate</button>
           </div>
           <div class="flex">
             <input data-bind="env.name" placeholder="project name" style="width:200px">
@@ -199,12 +188,12 @@
         </div>
       </div>
 
-      <div class="grid-2">
+    <div class="grid-2" data-on-interval__duration.3s="$view==='env' && @post('/api/env/docker/status', {payload:$env})">
         <div class="card">
           <div class="flex" style="justify-content:space-between;margin-bottom:0.75rem;">
             <h3 style="margin:0">Target Environment</h3>
-            <button data-show="!$targetStatus" data-on:click="dockerStart('target')" style="font-size:0.8rem;">Start</button>
-            <button data-show="$targetStatus" data-on:click="dockerStop('target')" style="font-size:0.8rem;background:#ef4444;color:white;">Stop</button>
+            <button data-show="!$targetStatus" data-on:click="$dockerLoading = true; @post('/api/env/docker/start', {payload:{type:'target', side:$env.target}})" data-attr:disabled="$dockerLoading" style="font-size:0.8rem;">Start</button>
+            <button data-show="$targetStatus" data-on:click="$dockerLoading = true; @post('/api/env/docker/stop', {payload:{type:'target', side:$env.target}})" data-attr:disabled="$dockerLoading" style="font-size:0.8rem;background:#ef4444;color:white;">Stop</button>
           </div>
           <div class="flex-col">
             <div><label>Compose Path</label><input data-bind="env.target.composePath"></div>
@@ -227,8 +216,8 @@
         <div class="card">
           <div class="flex" style="justify-content:space-between;margin-bottom:0.75rem;">
             <h3 style="margin:0">Source Environment</h3>
-            <button data-show="!$sourceStatus" data-on:click="dockerStart('source')" style="font-size:0.8rem;">Start</button>
-            <button data-show="$sourceStatus" data-on:click="dockerStop('source')" style="font-size:0.8rem;background:#ef4444;color:white;">Stop</button>
+            <button data-show="!$sourceStatus" data-on:click="$dockerLoading = true; @post('/api/env/docker/start', {payload:{type:'source', side:$env.source}})" data-attr:disabled="$dockerLoading" style="font-size:0.8rem;">Start</button>
+            <button data-show="$sourceStatus" data-on:click="$dockerLoading = true; @post('/api/env/docker/stop', {payload:{type:'source', side:$env.source}})" data-attr:disabled="$dockerLoading" style="font-size:0.8rem;background:#ef4444;color:white;">Stop</button>
           </div>
           <div class="flex-col">
             <div><label>Compose Path</label><input data-bind="env.source.composePath"></div>
@@ -255,147 +244,108 @@
 
   <div id="toast" style="position:fixed;bottom:1rem;right:1rem;padding:0.75rem 1.25rem;border-radius:0.5rem;color:white;font-size:0.9rem;z-index:999;display:none;"></div>
 
-  <script>
-    // ---- Helpers ----
-    function toast(msg, type='info') {
+  <script type="module">
+    import { getPath } from 'https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.8/bundles/datastar.js'
+
+    const toast = function(msg, type='info') {
       const el = document.getElementById('toast');
       el.textContent = msg;
       el.style.background = type === 'error' ? '#ef4444' : type === 'success' ? '#22c55e' : '#3b82f6';
       el.style.display = 'block';
       setTimeout(() => el.style.display = 'none', 3000);
     }
+    window.toast = toast
 
-    function splitCsv(val) {
+    const splitCsv = function(val) {
       if (!val) return [];
       if (Array.isArray(val)) return val.filter(v => v);
       return val.split(',').map(s => s.trim()).filter(s => s);
     }
+    window.splitCsv = splitCsv
 
-    async function api(path, opts = {}) {
-      const res = await fetch('/api' + path, {
-        headers: { 'Content-Type': 'application/json' },
-        ...opts
-      });
-      return res.json();
-    }
+    const buildComparePayload = () => ({
+      source: getPath('source'),
+      target: getPath('target'),
+      ignoreFields: splitCsv(getPath('ignoreFields')),
+      excludeTables: splitCsv(getPath('excludeTables')),
+      ignoreDataTables: splitCsv(getPath('ignoreDataTables')),
+      specifiedPrimaryKeys: splitCsv(getPath('specifiedPrimaryKeys')),
+      treeTableConfig: splitCsv(getPath('treeTableConfig')),
+      excludeDataRows: splitCsv(getPath('excludeDataRows')),
+      includeDataRows: splitCsv(getPath('includeDataRows'))
+    })
+    window.buildComparePayload = buildComparePayload
 
-    // ---- State helpers used by Datastar expressions ----
-    window.countStructDiffs = () => Datastar.signalsRaw('tables').filter(t => t.hasStructDiff).length;
-    window.countDataDiffs = () => Datastar.signalsRaw('tables').filter(t => t.hasDataDiff).length;
+    const buildConfigSavePayload = () => ({
+      filename: getPath('saveConfigName'),
+      ...buildComparePayload()
+    })
+    window.buildConfigSavePayload = buildConfigSavePayload
 
-    // ---- Config operations ----
-    window.loadConfigList = async () => {
-      try {
-        const files = await api('/config/list');
-        Datastar.patchSignals(`configFiles:${JSON.stringify(files)}`);
-      } catch(e) { console.error(e); }
+    window.renderSelectOptions = (select, items, selectedValue, placeholder) => {
+      const normalizedItems = items || [];
+      const currentValue = selectedValue ?? select.value ?? '';
+      select.innerHTML = '';
+      const placeholderOption = document.createElement('option');
+      placeholderOption.value = '';
+      placeholderOption.textContent = placeholder;
+      select.appendChild(placeholderOption);
+      for (const item of normalizedItems) {
+        const option = document.createElement('option');
+        option.value = String(item);
+        option.textContent = String(item);
+        select.appendChild(option);
+      }
+      select.value = normalizedItems.includes(currentValue) ? currentValue : '';
     };
 
-    window.loadConfig = async () => {
-      const sel = Datastar.signalsRaw('selectedConfig');
-      if (!sel) return;
-      try {
-        const config = await api('/config/load?filename=' + encodeURIComponent(sel));
-        // Patch form fields
-        if (config.source) {
-          Datastar.patchSignals(`source:${JSON.stringify(config.source)}`);
+    window.renderTableList = (list, tables, selectedTable) => {
+      list.innerHTML = '';
+      for (const table of tables || []) {
+        const item = document.createElement('li');
+        if (selectedTable === table.tableName) item.classList.add('active');
+        item.setAttribute('data-on:click', `$loading = true; @post('/api/compare/table', {payload:{resultId:$resultId, tableName:${JSON.stringify(table.tableName)}}})`);
+
+        const name = document.createElement('span');
+        name.textContent = table.tableName;
+        name.style.overflow = 'hidden';
+        name.style.textOverflow = 'ellipsis';
+        name.style.whiteSpace = 'nowrap';
+        name.style.maxWidth = '160px';
+
+        const badges = document.createElement('span');
+        if (table.hasStructDiff) {
+          const structBadge = document.createElement('span');
+          structBadge.className = 'badge badge-warn';
+          structBadge.textContent = 'S';
+          badges.appendChild(structBadge);
         }
-        if (config.target) {
-          Datastar.patchSignals(`target:${JSON.stringify(config.target)}`);
+        if (table.hasDataDiff) {
+          const dataBadge = document.createElement('span');
+          dataBadge.className = 'badge badge-danger';
+          dataBadge.textContent = 'D';
+          badges.appendChild(dataBadge);
         }
-        Datastar.patchSignals(`ignoreFields:${JSON.stringify(splitCsv(config.ignoreFields))}`);
-        Datastar.patchSignals(`excludeTables:${JSON.stringify(splitCsv(config.excludeTables))}`);
-        Datastar.patchSignals(`ignoreDataTables:${JSON.stringify(splitCsv(config.ignoreDataTables))}`);
-        Datastar.patchSignals(`specifiedPrimaryKeys:${JSON.stringify(splitCsv(config.specifiedPrimaryKeys))}`);
-        Datastar.patchSignals(`treeTableConfig:${JSON.stringify(splitCsv(config.treeTableConfig))}`);
-        Datastar.patchSignals(`excludeDataRows:${JSON.stringify(splitCsv(config.excludeDataRows))}`);
-        Datastar.patchSignals(`includeDataRows:${JSON.stringify(splitCsv(config.includeDataRows))}`);
-        toast('Config loaded', 'success');
-      } catch(e) { toast('Failed to load config', 'error'); }
-    };
 
-    window.saveConfig = async () => {
-      const name = Datastar.signalsRaw('saveConfigName');
-      if (!name) return toast('Enter a config name', 'error');
-      try {
-        const body = buildCompareRequest();
-        const res = await api('/config/save?filename=' + encodeURIComponent(name), {
-          method: 'POST', body: JSON.stringify(body)
-        });
-        if (res.success) {
-          toast('Config saved', 'success');
-          loadConfigList();
-        }
-      } catch(e) { toast('Failed to save config', 'error'); }
-    };
-
-    function buildCompareRequest() {
-      const s = Datastar.signalsRaw;
-      return {
-        source: s('source'),
-        target: s('target'),
-        ignoreFields: splitCsv(s('ignoreFields')),
-        excludeTables: splitCsv(s('excludeTables')),
-        ignoreDataTables: splitCsv(s('ignoreDataTables')),
-        specifiedPrimaryKeys: splitCsv(s('specifiedPrimaryKeys')),
-        treeTableConfig: splitCsv(s('treeTableConfig')),
-        excludeDataRows: splitCsv(s('excludeDataRows')),
-        includeDataRows: splitCsv(s('includeDataRows'))
-      };
-    }
-
-    // ---- Compare operations ----
-    window.startCompare = async () => {
-      Datastar.patchSignals('loading:true');
-      try {
-        const body = buildCompareRequest();
-        const res = await api('/compare', { method: 'POST', body: JSON.stringify(body) });
-        if (res.id) {
-          Datastar.patchSignals(`resultId:"${res.id}"`);
-          await loadTables(res.id);
-          Datastar.patchSignals('view:"result"');
-          toast('Comparison complete', 'success');
-        } else if (res.success) {
-          toast('No differences found', 'info');
-        } else {
-          toast(res.error || 'Compare failed', 'error');
-        }
-      } catch(e) { toast('Compare failed: ' + e.message, 'error'); }
-      finally { Datastar.patchSignals('loading:false'); }
-    };
-
-    async function loadTables(id) {
-      try {
-        const res = await api('/compare/' + id + '/tables');
-        Datastar.patchSignals(`tables:${JSON.stringify(res.tables || [])}`);
-      } catch(e) { console.error(e); }
-    }
-
-    window.selectTable = async (tableName) => {
-      Datastar.patchSignals(`selectedTable:"${tableName}"`, 'detail:null', 'loading:true');
-      const id = Datastar.signalsRaw('resultId');
-      try {
-        const res = await api('/compare/' + id + '/table/' + encodeURIComponent(tableName));
-        Datastar.patchSignals('detail:' + JSON.stringify(res.diff));
-        renderDetail(res.diff);
-        // Load SQL
-        const sql = await api('/compare/' + id + '/table/' + encodeURIComponent(tableName) + '/sql');
-        Datastar.patchSignals(`upgradeSql:${JSON.stringify(sql.upgradeSql)}`, `rollbackSql:${JSON.stringify(sql.rollbackSql)}`);
-      } catch(e) { console.error(e); }
-      finally { Datastar.patchSignals('loading:false'); }
+        item.appendChild(name);
+        item.appendChild(badges);
+        list.appendChild(item);
+      }
     };
 
     window.downloadSql = (type) => {
-      const id = Datastar.signalsRaw('resultId');
+      const id = getPath('resultId');
       window.open('/api/compare/' + id + '/sql/download?type=' + type, '_blank');
     };
 
-    // ---- Render detail ----
-    function renderDetail(diff) {
-      const container = document.getElementById('detail-content');
+    window.renderDetail = (container, diff) => {
+      if (!diff) {
+        container.innerHTML = '';
+        return;
+      }
+
       let html = '';
 
-      // Structure diff
       if (diff.structDiff) {
         const cols = (diff.structDiff.columns || []).filter(c => c.status !== 'EQUAL');
         const idxs = (diff.structDiff.indexes || []).filter(i => i.status !== 'EQUAL');
@@ -431,7 +381,6 @@
         }
       }
 
-      // Data diff
       if (diff.dataDiff) {
         const dd = diff.dataDiff;
         const hasAny = (dd.removed||[]).length || (dd.added||[]).length || (dd.modified||[]).length;
@@ -456,30 +405,20 @@
         }
       }
 
-      // SQL section
       html += '<h3 class="mt-2">SQL Scripts</h3>';
       html += '<div class="flex mb-2">';
-      html += '<button onclick="showSql(\'upgrade\')" id="btn-upgrade" style="font-weight:600;">Upgrade</button>';
-      html += '<button onclick="showSql(\'rollback\')" id="btn-rollback">Rollback</button>';
-      html += '<button onclick="copySql()" style="margin-left:auto;">Copy</button>';
+      html += '<button data-on:click="$sqlType=\'upgrade\'" data-class:font-bold="$sqlType===\'upgrade\'">Upgrade</button>';
+      html += '<button data-on:click="$sqlType=\'rollback\'" data-class:font-bold="$sqlType===\'rollback\'">Rollback</button>';
+      html += '<button data-on:click="copySql($sqlType === \'upgrade\' ? $upgradeSql : $rollbackSql)" style="margin-left:auto;">Copy</button>';
       html += '</div>';
-      html += '<div id="sql-display" class="sql-block"></div>';
+      html += '<div class="sql-block" data-text="$sqlType === \'upgrade\' ? ($upgradeSql || \'-- no SQL --\') : ($rollbackSql || \'-- no SQL --\')"></div>';
 
       container.innerHTML = html;
-      showSql('upgrade');
-    }
-
-    window.showSql = (type) => {
-      const sql = type === 'upgrade' ? Datastar.signalsRaw('upgradeSql') : Datastar.signalsRaw('rollbackSql');
-      document.getElementById('sql-display').textContent = sql || '-- no SQL --';
-      document.getElementById('btn-upgrade').style.fontWeight = type === 'upgrade' ? '600' : '400';
-      document.getElementById('btn-rollback').style.fontWeight = type === 'rollback' ? '600' : '400';
     };
 
-    window.copySql = () => {
-      const sql = document.getElementById('sql-display').textContent;
-      navigator.clipboard.writeText(sql);
-      toast('Copied', 'success');
+    window.copySql = (sql) => {
+      navigator.clipboard.writeText(sql || '');
+      window.toast('Copied', 'success');
     };
 
     function renderDataTable(rows, pks) {
@@ -549,92 +488,6 @@
       return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
-    // ---- Env operations ----
-    window.loadEnvList = async () => {
-      try {
-        const files = await api('/env/list');
-        Datastar.patchSignals(`envFiles:${JSON.stringify(files)}`);
-      } catch(e) { console.error(e); }
-    };
-
-    window.loadEnv = async () => {
-      const sel = Datastar.signalsRaw('selectedEnv');
-      if (!sel) return;
-      try {
-        const config = await api('/env/load?filename=' + encodeURIComponent(sel));
-        Datastar.patchSignals(`env:${JSON.stringify(config)}`);
-        toast('Env loaded', 'success');
-      } catch(e) { toast('Failed to load env', 'error'); }
-    };
-
-    window.saveEnv = async () => {
-      const env = Datastar.signalsRaw('env');
-      try {
-        const res = await api('/env/save', { method: 'POST', body: JSON.stringify(env) });
-        if (res.success) { toast('Env saved', 'success'); loadEnvList(); }
-      } catch(e) { toast('Failed to save env', 'error'); }
-    };
-
-    window.generateConfig = async () => {
-      const env = Datastar.signalsRaw('env');
-      try {
-        const res = await api('/env/generate', { method: 'POST', body: JSON.stringify(env) });
-        if (res.success) toast('Generated: ' + res.filename, 'success');
-      } catch(e) { toast('Failed to generate', 'error'); }
-    };
-
-    window.dockerStart = async (type) => {
-      Datastar.patchSignals('dockerLoading:true');
-      const env = Datastar.signalsRaw('env');
-      const side = type === 'source' ? env.source : env.target;
-      try {
-        await api('/env/docker/start', { method: 'POST', body: JSON.stringify({
-          codePath: side.codePath, composePath: side.composePath,
-          prefix: side.containerPrefix, serviceName: side.serviceName,
-          port: side.port, excludeInitSql: side.excludeInitSql, gitRef: side.gitRef
-        })});
-        toast(type + ' started', 'success');
-        pollDockerStatus();
-      } catch(e) { toast('Failed to start ' + type, 'error'); }
-      finally { Datastar.patchSignals('dockerLoading:false'); }
-    };
-
-    window.dockerStop = async (type) => {
-      Datastar.patchSignals('dockerLoading:true');
-      const env = Datastar.signalsRaw('env');
-      const side = type === 'source' ? env.source : env.target;
-      try {
-        await api('/env/docker/stop', { method: 'POST', body: JSON.stringify({
-          codePath: side.codePath, composePath: side.composePath,
-          prefix: side.containerPrefix, serviceName: side.serviceName, port: side.port
-        })});
-        toast(type + ' stopped', 'success');
-        pollDockerStatus();
-      } catch(e) { toast('Failed to stop ' + type, 'error'); }
-      finally { Datastar.patchSignals('dockerLoading:false'); }
-    };
-
-    async function pollDockerStatus() {
-      const env = Datastar.signalsRaw('env');
-      for (const type of ['source', 'target']) {
-        const side = env[type];
-        if (!side.composePath || !side.serviceName) continue;
-        try {
-          const res = await api('/env/docker/status', { method: 'POST', body: JSON.stringify({
-            codePath: side.codePath, composePath: side.composePath,
-            prefix: side.containerPrefix, serviceName: side.serviceName, port: side.port
-          })});
-          if (type === 'source') Datastar.patchSignals(`sourceStatus:${res.running}`);
-          else Datastar.patchSignals(`targetStatus:${res.running}`);
-        } catch(e) {}
-      }
-    }
-
-    // ---- Init ----
-    document.addEventListener('DOMContentLoaded', () => {
-      loadConfigList();
-      loadEnvList();
-    });
   </script>
 </body>
 </html>

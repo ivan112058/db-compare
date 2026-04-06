@@ -13,6 +13,17 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
+private data class TableSelectionPayload(
+    val resultId: String = "",
+    val tableName: String = ""
+)
+
+private data class TableSummary(
+    val tableName: String,
+    val hasStructDiff: Boolean,
+    val hasDataDiff: Boolean
+)
+
 fun Route.compareRoutes(
     compareService: CompareService,
     dbService: DatabaseService,
@@ -30,7 +41,7 @@ fun Route.compareRoutes(
     }
 
     post("/compare") {
-        val result = try {
+        try {
             val request = call.receive<CompareRequest>()
             val compareResult = compareService.compare(request)
 
@@ -38,55 +49,72 @@ fun Route.compareRoutes(
             val diffs = compareResult["tables"] as List<TableDiff>
 
             if (diffs.isEmpty()) {
-                mapOf("success" to true)
+                call.respondDataStar {
+                    patchSignalsJson(
+                        mapOf(
+                            "loading" to false,
+                            "resultId" to "",
+                            "tables" to emptyList<TableSummary>(),
+                            "selectedTable" to null,
+                            "detail" to null,
+                            "upgradeSql" to "",
+                            "rollbackSql" to ""
+                        )
+                    )
+                    toast("No differences found", "info")
+                }
             } else {
                 val id = resultCacheService.saveResult(diffs)
-                mapOf("success" to true, "id" to id)
+                call.respondDataStar {
+                    patchSignalsJson(
+                        mapOf(
+                            "loading" to false,
+                            "resultId" to id,
+                            "tables" to diffs.toSummaries(),
+                            "selectedTable" to null,
+                            "detail" to null,
+                            "upgradeSql" to "",
+                            "rollbackSql" to "",
+                            "sqlType" to "upgrade",
+                            "view" to "result"
+                        )
+                    )
+                    toast("Comparison complete", "success")
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            mapOf("error" to (e.message ?: "Unknown error"))
+            call.respondDataStar {
+                patchSignalsJson(mapOf("loading" to false))
+                toast(e.message ?: "Compare failed", "error")
+            }
         }
-        call.respond(result)
     }
 
-    get("/compare/{id}/tables") {
-        val id = call.parameters["id"]!!
-        val diffs = resultCacheService.getResult(id)
-            ?: return@get call.respond(mapOf("error" to "Result not found or expired"))
-
-        val summaries = diffs.map { diff ->
-            val hasStructDiff = !(diff.structDiff?.isEmpty() ?: true)
-            val hasDataDiff = diff.dataDiff?.let {
-                !it.added.isNullOrEmpty() || !it.removed.isNullOrEmpty() || !it.modified.isNullOrEmpty()
-            } ?: false
-
-            mapOf(
-                "tableName" to diff.tableName,
-                "hasStructDiff" to hasStructDiff,
-                "hasDataDiff" to hasDataDiff
-            )
+    post("/compare/table") {
+        val payload = call.receive<TableSelectionPayload>()
+        val diff = resultCacheService.getTableDiff(payload.resultId, payload.tableName)
+        if (diff == null) {
+            call.respondDataStar {
+                patchSignalsJson(mapOf("loading" to false))
+                toast("Table diff not found", "error")
+            }
+            return@post
         }
-        call.respond(mapOf("tables" to summaries))
-    }
-
-    get("/compare/{id}/table/{tableName}") {
-        val id = call.parameters["id"]!!
-        val tableName = call.parameters["tableName"]!!
-        val diff = resultCacheService.getTableDiff(id, tableName)
-            ?: return@get call.respond(mapOf("error" to "Table diff not found"))
-        call.respond(mapOf("diff" to diff))
-    }
-
-    get("/compare/{id}/table/{tableName}/sql") {
-        val id = call.parameters["id"]!!
-        val tableName = call.parameters["tableName"]!!
-        val diff = resultCacheService.getTableDiff(id, tableName)
-            ?: return@get call.respond(mapOf("error" to "Table diff not found"))
-
         val upgrade = sqlGenerationService.generateUpgradeSql(diff)
         val rollback = sqlGenerationService.generateRollbackSql(diff)
-        call.respond(mapOf("upgradeSql" to upgrade, "rollbackSql" to rollback))
+        call.respondDataStar {
+            patchSignalsJson(
+                mapOf(
+                    "loading" to false,
+                    "selectedTable" to payload.tableName,
+                    "detail" to diff,
+                    "upgradeSql" to upgrade,
+                    "rollbackSql" to rollback,
+                    "sqlType" to "upgrade"
+                )
+            )
+        }
     }
 
     get("/compare/{id}/sql/download") {
@@ -109,3 +137,14 @@ fun Route.compareRoutes(
         call.respondText(fullSql, ContentType.Application.OctetStream)
     }
 }
+
+private fun List<TableDiff>.toSummaries(): List<TableSummary> =
+    map { diff ->
+        TableSummary(
+            tableName = diff.tableName,
+            hasStructDiff = !(diff.structDiff?.isEmpty() ?: true),
+            hasDataDiff = diff.dataDiff?.let {
+                !it.added.isNullOrEmpty() || !it.removed.isNullOrEmpty() || !it.modified.isNullOrEmpty()
+            } ?: false
+        )
+    }

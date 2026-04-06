@@ -1,11 +1,7 @@
 package com.zxqj.dbcompare
 
 import com.fasterxml.jackson.databind.SerializationFeature
-import com.zxqj.dbcompare.routes.compareRoutes
-import com.zxqj.dbcompare.routes.configRoutes
-import com.zxqj.dbcompare.routes.envRoutes
-import com.zxqj.dbcompare.routes.fsRoutes
-import com.zxqj.dbcompare.routes.gitRoutes
+import com.zxqj.dbcompare.routes.*
 import com.zxqj.dbcompare.service.CompareService
 import com.zxqj.dbcompare.service.DatabaseService
 import com.zxqj.dbcompare.service.ResultCacheService
@@ -14,11 +10,11 @@ import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
+import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.routing.*
-import io.ktor.server.http.content.*
 
 fun main() {
     embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
@@ -45,7 +41,7 @@ fun Application.module() {
 
     routing {
         staticResources("/", "static") {
-            default("index.html")
+            default("test.html")
         }
 
         route("/api") {
