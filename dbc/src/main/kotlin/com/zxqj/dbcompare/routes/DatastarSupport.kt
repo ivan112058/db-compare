@@ -11,47 +11,18 @@ import java.io.Writer
 
 private val dataStarObjectMapper = ObjectMapper().findAndRegisterModules()
 
-private class KtorDataStarResponse(
-    private val call: ApplicationCall,
-    private val writer: Writer
-) : Response {
-    override fun sendConnectionHeaders(
-        status: Int,
-        headers: Map<String, List<String>>
-    ) {
-        call.response.status(HttpStatusCode.fromValue(status))
-        headers.forEach { (name, values) ->
-            if (name == HttpHeaders.ContentType) return@forEach
-            values.forEach { value ->
-                call.response.headers.append(name, value, safeOnly = false)
-            }
-        }
-    }
-
-    override fun write(text: String) {
-        writer.write(text)
-    }
-
-    override fun flush() {
-        writer.flush()
-    }
+object KtorGenerator {
+    operator fun invoke(writer: Writer) = ServerSentEventGenerator(adaptResponse(writer))
 }
-
-internal fun datastarJson(value: Any): String = dataStarObjectMapper.writeValueAsString(value)
 
 internal suspend fun ApplicationCall.respondDataStar(block: ServerSentEventGenerator.() -> Unit) {
     respondTextWriter(status = HttpStatusCode.OK, contentType = ContentType.Text.EventStream) {
-        val generator = ServerSentEventGenerator(KtorDataStarResponse(this@respondDataStar, this))
+        val generator = KtorGenerator(this)
         generator.block()
     }
 }
 
-internal suspend fun ApplicationCall.patchElements(
-    elements: String? = null,
-    options: PatchElementsOptions = PatchElementsOptions(),
-) {
-    respondDataStar { patchElements(elements, options) }
-}
+internal fun datastarJson(value: Any): String = dataStarObjectMapper.writeValueAsString(value)
 
 internal fun ServerSentEventGenerator.patchSignalsJson(value: Any) {
     patchSignals(datastarJson(value))
@@ -60,3 +31,25 @@ internal fun ServerSentEventGenerator.patchSignalsJson(value: Any) {
 internal fun ServerSentEventGenerator.toast(message: String, type: String = "info") {
     executeScript("window.toast(${datastarJson(message)}, ${datastarJson(type)})")
 }
+
+internal fun ServerSentEventGenerator.otToast(message: String, title: String = "", variant: String = "success") {
+    executeScript("ot.toast('$message', '$title', { variant: '$variant' })")
+}
+
+fun adaptResponse(writer: Writer): Response =
+    object : Response {
+        override fun sendConnectionHeaders(
+            status: Int,
+            headers: Map<String, List<String>>,
+        ) {
+            // connection is already set up when used
+        }
+
+        override fun write(text: String) {
+            writer.write(text)
+        }
+
+        override fun flush() {
+            writer.flush()
+        }
+    }

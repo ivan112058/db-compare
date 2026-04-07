@@ -1,0 +1,24 @@
+[data-theme="stone"] {
+  --background: light-dark(#fafaf9, #0c0a09);
+  --foreground: light-dark(#1c1917, #fafaf9);
+  --card: light-dark(#fff, #1c1917);
+  --card-foreground: light-dark(#1c1917, #fafaf9);
+  --primary: light-dark(#1c1917, #fafaf9);
+  --primary-foreground: light-dark(#fafaf9, #1c1917);
+  --secondary: light-dark(#f5f5f4, #292524);
+  --secondary-foreground: light-dark(#1c1917, #fafaf9);
+  --muted: light-dark(#f5f5f4, #292524);
+  --muted-foreground: light-dark(#78716c, #a8a29e);
+  --faint: light-dark(#fafaf9, #1a1614);
+  --faint-foreground: light-dark(#a8a29e, #78716c);
+  --accent: light-dark(#f5f5f4, #292524);
+  --danger: light-dark(#d32f2f, #f4807b);
+  --danger-foreground: light-dark(#fafaf9, #1c1917);
+  --success: light-dark(#008032, #6cc070);
+  --success-foreground: light-dark(#fafaf9, #1c1917);
+  --warning: light-dark(#a65b00, #f0a030);
+  --warning-foreground: #1c1917;
+  --border: light-dark(#d6d3d1, #44403c);
+  --input: light-dark(#d6d3d1, #44403c);
+  --ring: light-dark(#1c1917, #d6d3d1);
+}

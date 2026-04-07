@@ -1,5 +1,6 @@
 package com.zxqj.dbcompare
 
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.zxqj.dbcompare.routes.*
 import com.zxqj.dbcompare.service.CompareService
@@ -30,6 +31,7 @@ fun Application.module() {
     install(ContentNegotiation) {
         jackson {
             enable(SerializationFeature.INDENT_OUTPUT)
+            disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         }
     }
 
@@ -41,7 +43,7 @@ fun Application.module() {
 
     routing {
         staticResources("/", "static") {
-            default("test.html")
+            default("config.html")
         }
 
         route("/api") {

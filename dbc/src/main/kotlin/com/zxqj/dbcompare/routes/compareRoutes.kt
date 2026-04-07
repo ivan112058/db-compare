@@ -43,6 +43,7 @@ fun Route.compareRoutes(
     post("/compare") {
         try {
             val request = call.receive<CompareRequest>()
+            application.log.info("compare request $request")
             val compareResult = compareService.compare(request)
 
             @Suppress("UNCHECKED_CAST")
