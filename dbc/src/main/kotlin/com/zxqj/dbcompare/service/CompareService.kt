@@ -10,7 +10,7 @@ import java.sql.SQLException
 class CompareService(private val dbService: DatabaseService) {
 
     @Throws(SQLException::class)
-    fun compare(request: CompareRequest): Map<String, Any> {
+    fun compare(request: CompareRequest): List<TableDiff> {
         val sourceConfig = request.source ?: throw IllegalArgumentException("Source config is required")
         val targetConfig = request.target ?: throw IllegalArgumentException("Target config is required")
 
@@ -20,11 +20,9 @@ class CompareService(private val dbService: DatabaseService) {
                 val targetTables = dbService.getTableNames(targetConn, targetConfig.database).toHashSet()
                 val allTables = (sourceTables + targetTables).toSortedSet()
 
-                val tableDiffs = allTables.mapNotNull { tableName ->
+                allTables.mapNotNull { tableName ->
                     processTable(tableName, sourceConn, targetConn, sourceTables, targetTables, request)
                 }
-
-                mapOf("tables" to tableDiffs)
             }
         }
     }

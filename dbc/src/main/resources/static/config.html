@@ -5,12 +5,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DB Compare</title>
-    <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
-    <link rel="stylesheet" href="theme.css">
-    <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
-    <script type="module"
-        src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.8/bundles/datastar.js"></script>
-</head>
+    <link rel="stylesheet" href="css/oat.min.css">
+    <link rel="stylesheet" href="css/chip.min.css">
+    <link rel="stylesheet" href="css/theme.css">
 </head>
 
 <body style="max-width: 1100px; margin: 0 auto; padding: var(--space-4);" data-theme="stone">
@@ -21,7 +18,7 @@
         <div class="flex gap-2">
             <label data-field style="flex:1">
                 Load Config
-                <select class="oat-select" id="config-select" data-init="@get('/api/config')" data-bind="selectedConfig"
+                <select id="config-select" data-init="@get('/api/config')" data-bind="selectedConfig"
                     data-on:change="$selectedConfig && @post('/api/config'); $saveConfigName = $selectedConfig.replace(/\.yml$/, '')"
                     style="margin:0">
                 </select>
@@ -36,112 +33,165 @@
         </div>
     </article>
 
-    <div class="flex gap-4 mt-4">
-        <article class="card" style="flex:1">
+    <form id="config-form">
+        <div class="flex gap-4 mt-4">
+            <article class="card" style="flex:1">
+                <header>
+                    <h3>Source</h3>
+                </header>
+                <div class="flex gap-2">
+                    <label data-field style="flex:3">
+                        Host
+                        <input type="text" name="source.host" value="localhost" />
+                    </label>
+                    <label data-field style="flex:1">
+                        Port
+                        <input type="number" name="source.port" value="3306" />
+                    </label>
+                </div>
+                <div class="flex gap-2">
+                    <label data-field style="flex:1">
+                        Username
+                        <input type="text" name="source.username" value="root" />
+                    </label>
+                    <label data-field style="flex:1">
+                        Password
+                        <input type="password" name="source.password" />
+                    </label>
+                </div>
+                <label data-field>
+                    Database
+                    <input type="text" name="source.database" />
+                </label>
+            </article>
+            <article class="card" style="flex:1">
+                <header>
+                    <h3>Target</h3>
+                </header>
+                <div class="flex gap-2">
+                    <label data-field style="flex:3">
+                        Host
+                        <input type="text" name="target.host" value="localhost" />
+                    </label>
+                    <label data-field style="flex:1">
+                        Port
+                        <input type="number" name="target.port" value="3306" />
+                    </label>
+                </div>
+                <div class="flex gap-2">
+                    <label data-field style="flex:1">
+                        Username
+                        <input type="text" name="target.username" value="root" />
+                    </label>
+                    <label data-field style="flex:1">
+                        Password
+                        <input type="password" name="target.password" />
+                    </label>
+                </div>
+                <label data-field>
+                    Database
+                    <input type="text" name="target.database" />
+                </label>
+            </article>
+        </div>
+
+        <article class="card mt-4">
             <header>
-                <h3>Source</h3>
+                <h3>Options</h3>
             </header>
-            <div class="flex gap-2">
-                <label data-field style="flex:3">
-                    Host
-                    <input type="text" data-bind="source.host" value="localhost" />
-                </label>
-                <label data-field style="flex:1">
-                    Port
-                    <input type="number" data-bind="source.port" value="3306" />
-                </label>
-            </div>
-            <div class="flex gap-2">
-                <label data-field style="flex:1">
-                    Username
-                    <input type="text" data-bind="source.username" value="root" />
-                </label>
-                <label data-field style="flex:1">
-                    Password
-                    <input type="password" data-bind="source.password" />
-                </label>
-            </div>
             <label data-field>
-                Database
-                <input type="text" data-bind="source.database" />
+                Ignore Fields
+                <oat-chip-input name="ignoreFields"
+                    placeholder="e.g. create_time, table.column. Press ENTER to add."></oat-chip-input>
+                <small data-hint>Columns that should be ignored during comparison. Global or table-specific.</small>
+            </label>
+            <label data-field>
+                Exclude Tables
+                <oat-chip-input name="excludeTables" placeholder="Table names. Press ENTER to add."></oat-chip-input>
+                <small data-hint>Tables that should be excluded from comparison.</small>
+            </label>
+            <label data-field>
+                Ignore Data Tables
+                <oat-chip-input name="ignoreDataTables" placeholder="Table names. Press ENTER to add."></oat-chip-input>
+                <small data-hint>Tables whose data should be ignored during comparison.</small>
+            </label>
+            <label data-field>
+                Specified Primary Keys
+                <oat-chip-input name="specifiedPrimaryKeys"
+                    placeholder="table(col1,col2). Press ENTER to add."></oat-chip-input>
+                <small data-hint>Primary keys that should be used for comparison.</small>
+            </label>
+            <label data-field>
+                Tree Table Config
+                <oat-chip-input name="treeTableConfig"
+                    placeholder="table(id,parent_id). Press ENTER to add."></oat-chip-input>
+                <small data-hint>Tree-structured tables. MUST set Specified Primary Keys.</small>
+            </label>
+            <label data-field>
+                Exclude Data Rows
+                <oat-chip-input name="excludeDataRows"
+                    placeholder="table(col=val). Press ENTER to add."></oat-chip-input>
+                <small data-hint>Rows that should be excluded from comparison. This config will be ignored if Include
+                    Data
+                    Rows is set.</small>
+            </label>
+            <label data-field>
+                Include Data Rows
+                <oat-chip-input name="includeDataRows"
+                    placeholder="table(col=val). Press ENTER to add."></oat-chip-input>
+                <small data-hint>Rows that should be included in comparison.</small>
             </label>
         </article>
-        <article class="card" style="flex:1">
-            <header>
-                <h3>Target</h3>
-            </header>
-            <div class="flex gap-2">
-                <label data-field style="flex:3">
-                    Host
-                    <input type="text" data-bind="target.host" value="localhost" />
-                </label>
-                <label data-field style="flex:1">
-                    Port
-                    <input type="number" data-bind="target.port" value="3306" />
-                </label>
-            </div>
-            <div class="flex gap-2">
-                <label data-field style="flex:1">
-                    Username
-                    <input type="text" data-bind="target.username" value="root" />
-                </label>
-                <label data-field style="flex:1">
-                    Password
-                    <input type="password" data-bind="target.password" />
-                </label>
-            </div>
-            <label data-field>
-                Database
-                <input type="text" data-bind="target.database" />
-            </label>
-        </article>
-    </div>
 
-    <article class="card mt-4">
-        <header>
-            <h3>Options</h3>
-        </header>
-        <label data-field>
-            Ignore Fields
-            <input data-bind="ignoreFields" multiple placeholder="comma-separated, e.g. create_time, table.column">
-            <small data-hint>Columns that should be ignored during comparison. Global or table-specific.</small>
-        </label>
-        <label data-field>
-            Exclude Tables
-            <input data-bind="excludeTables" placeholder="comma-separated table names">
-            <small data-hint>Tables that should be excluded from comparison.</small>
-        </label>
-        <label data-field>
-            Ignore Data Tables
-            <input data-bind="ignoreDataTables" placeholder="comma-separated, skip data compare">
-            <small data-hint>Tables whose data should be ignored during comparison.</small>
-        </label>
-        <label data-field>
-            Specified Primary Keys
-            <input data-bind="specifiedPrimaryKeys" placeholder="table(col1,col2)">
-            <small data-hint>Primary keys that should be used for comparison.</small>
-        </label>
-        <label data-field>
-            Tree Table Config
-            <input data-bind="treeTableConfig" placeholder="table(id,parent_id)">
-            <small data-hint>Tree-structured tables. MUST set Specified Primary Keys.</small>
-        </label>
-        <label data-field>
-            Exclude Data Rows
-            <input data-bind="excludeDataRows" placeholder="table(col=val)">
-            <small data-hint>Rows that should be excluded from comparison. This config will be ignored if Include Data
-                Rows is set.</small>
-        </label>
-        <label data-field>
-            Include Data Rows
-            <input data-bind="includeDataRows" placeholder="table(col=val)">
-            <small data-hint>Rows that should be included in comparison.</small>
-        </label>
-    </article>
+        <div class="align-center mt-4">
+            <button data-indicator:_loading data-on:click="@post('/api/compare', {contentType: 'form'})">
+                Start Comparison
+                <span data-show="$_loading">Comparing...</span>
+            </button>
+        </div>
+    </form>
 
-    <div class="align-center mt-4">
-        <button data-on:click="@post('/api/compare')">Start Comparison</button>
-    </div>
+    <script src="js/oat-chip-input.js" defer></script>
+    <script src="js/oat.min.js" defer></script>
+    <script src="js/chip.min.js" defer></script>
+    <script type="module" src="js/datastar.js"></script>
 </body>
+
+<style>
+    .chip-input-wrapper {
+        display: flex;
+        flex-wrap: wrap;
+        width: 100%;
+        margin-block-start: var(--space-1);
+        padding: var(--space-2) var(--space-3);
+        font-size: var(--text-7);
+        line-height: var(--leading-normal);
+        background-color: var(--background);
+        color: var(--foreground);
+        border: 1px solid var(--input);
+        border-radius: var(--radius-medium);
+        gap: var(--space-2);
+
+        .chip {
+            padding: 0 var(--space-3);
+        }
+
+        .chip-input {
+            flex: 1;
+            margin-block-start: 0;
+            width: 100%;
+            padding: 0;
+            background-color: var(--background);
+            color: var(--foreground);
+            border: none;
+
+            &:focus {
+                outline: none;
+                border-color: none;
+                box-shadow: none;
+            }
+        }
+    }
+</style>
 
 </html>

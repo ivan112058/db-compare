@@ -1,5 +1,7 @@
 package com.zxqj.dbcompare.routes
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.zxqj.dbcompare.model.CompareRequest
 import com.zxqj.dbcompare.model.DbConfig
 import com.zxqj.dbcompare.model.TableDiff
@@ -8,10 +10,14 @@ import com.zxqj.dbcompare.service.DatabaseService
 import com.zxqj.dbcompare.service.ResultCacheService
 import com.zxqj.dbcompare.service.SqlGenerationService
 import io.ktor.http.*
+import io.ktor.http.ContentType.Application.Json
 import io.ktor.server.application.*
+import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+
+private val objectMapper = ObjectMapper().findAndRegisterModules()
 
 private data class TableSelectionPayload(
     val resultId: String = "",
@@ -41,55 +47,71 @@ fun Route.compareRoutes(
     }
 
     post("/compare") {
+        val form = call.receiveParameters()
+        application.log.info("compare $form")
+
         try {
-            val request = call.receive<CompareRequest>()
-            application.log.info("compare request $request")
-            val compareResult = compareService.compare(request)
+            val request = form.toCompareRequest()
+            val diffs = compareService.compare(request)
 
-            @Suppress("UNCHECKED_CAST")
-            val diffs = compareResult["tables"] as List<TableDiff>
 
-            if (diffs.isEmpty()) {
-                call.respondDataStar {
-                    patchSignalsJson(
-                        mapOf(
-                            "loading" to false,
-                            "resultId" to "",
-                            "tables" to emptyList<TableSummary>(),
-                            "selectedTable" to null,
-                            "detail" to null,
-                            "upgradeSql" to "",
-                            "rollbackSql" to ""
-                        )
-                    )
-                    toast("No differences found", "info")
-                }
-            } else {
-                val id = resultCacheService.saveResult(diffs)
-                call.respondDataStar {
-                    patchSignalsJson(
-                        mapOf(
-                            "loading" to false,
-                            "resultId" to id,
-                            "tables" to diffs.toSummaries(),
-                            "selectedTable" to null,
-                            "detail" to null,
-                            "upgradeSql" to "",
-                            "rollbackSql" to "",
-                            "sqlType" to "upgrade",
-                            "view" to "result"
-                        )
-                    )
-                    toast("Comparison complete", "success")
-                }
-            }
         } catch (e: Exception) {
-            e.printStackTrace()
+            if (e is BadRequestException){
+                application.log.warn(e.message)
+            } else{
+                application.log.error("compare error", e)
+            }
             call.respondDataStar {
                 patchSignalsJson(mapOf("loading" to false))
-                toast(e.message ?: "Compare failed", "error")
+                otToast(e.message ?: "Compare failed", "error", "danger")
             }
         }
+//        try {
+//            val request = call.receive<CompareRequest>()
+//            application.log.info("compare request $request")
+//            val diffs = compareService.compare(request)
+//
+//            if (diffs.isEmpty()) {
+//                call.respondDataStar {
+//                    patchSignalsJson(
+//                        mapOf(
+//                            "loading" to false,
+//                            "resultId" to "",
+//                            "tables" to emptyList<TableSummary>(),
+//                            "selectedTable" to null,
+//                            "detail" to null,
+//                            "upgradeSql" to "",
+//                            "rollbackSql" to ""
+//                        )
+//                    )
+//                    toast("No differences found", "info")
+//                }
+//            } else {
+//                val id = resultCacheService.saveResult(diffs)
+//                call.respondDataStar {
+//                    patchSignalsJson(
+//                        mapOf(
+//                            "loading" to false,
+//                            "resultId" to id,
+//                            "tables" to diffs.toSummaries(),
+//                            "selectedTable" to null,
+//                            "detail" to null,
+//                            "upgradeSql" to "",
+//                            "rollbackSql" to "",
+//                            "sqlType" to "upgrade",
+//                            "view" to "result"
+//                        )
+//                    )
+//                    toast("Comparison complete", "success")
+//                }
+//            }
+//        } catch (e: Exception) {
+//            e.printStackTrace()
+//            call.respondDataStar {
+//                patchSignalsJson(mapOf("loading" to false))
+//                toast(e.message ?: "Compare failed", "error")
+//            }
+//        }
     }
 
     post("/compare/table") {
@@ -149,3 +171,32 @@ private fun List<TableDiff>.toSummaries(): List<TableSummary> =
             } ?: false
         )
     }
+
+fun Parameters.toCompareRequest(): CompareRequest {
+    fun toDbConfig(name: String): DbConfig {
+        return DbConfig(
+            host = this["$name.host"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.host 不能为空"),
+            port = this["$name.port"]?.toIntOrNull() ?: throw BadRequestException("$name.port 错误"),
+            username = this["$name.username"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.username 不能为空"),
+            password = this["$name.password"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.password 不能为空"),
+            database = this["$name.database"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.database 不能为空")
+        )
+    }
+
+    fun toStringList(name: String): List<String>? {
+        val value = this[name] ?: return null
+        return objectMapper.readValue<List<String>>(value)
+    }
+
+    return CompareRequest(
+        source = toDbConfig("source"),
+        target = toDbConfig("target"),
+        ignoreFields = toStringList("ignoreFields"),
+        excludeTables = toStringList("excludeTables"),
+        ignoreDataTables = toStringList("ignoreDataTables"),
+        specifiedPrimaryKeys = toStringList("specifiedPrimaryKeys"),
+        treeTableConfig = toStringList("treeTableConfig"),
+        excludeDataRows = toStringList("excludeDataRows"),
+        includeDataRows = toStringList("includeDataRows")
+    )
+}
