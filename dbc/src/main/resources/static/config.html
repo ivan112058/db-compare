@@ -8,14 +8,17 @@
     <link rel="stylesheet" href="css/oat.min.css">
     <link rel="stylesheet" href="css/chip.min.css">
     <link rel="stylesheet" href="css/theme.css">
+      <script defer type="module" src="https://cdn.jsdelivr.net/gh/dataSPA/dataSPA-inspector@main/dataspa-inspector.bundled.js"></script>
 </head>
 
 <body style="max-width: 1100px; margin: 0 auto; padding: var(--space-4);" data-theme="stone">
+      <dataspa-inspector></dataspa-inspector>
     <article class="card">
-        <header>
+        <header class="flex justify-between">
             <h3>Configuration</h3>
+            <a href="/env.html">env management</a>
         </header>
-        <div class="flex gap-2">
+        <div class="flex gap-4">
             <label data-field style="flex:1">
                 Load Config
                 <select id="config-select" data-init="@get('/api/config')" data-bind="selectedConfig"
@@ -35,35 +38,6 @@
 
     <form id="config-form">
         <div class="flex gap-4 mt-4">
-            <article class="card" style="flex:1">
-                <header>
-                    <h3>Source</h3>
-                </header>
-                <div class="flex gap-2">
-                    <label data-field style="flex:3">
-                        Host
-                        <input type="text" name="source.host" value="localhost" />
-                    </label>
-                    <label data-field style="flex:1">
-                        Port
-                        <input type="number" name="source.port" value="3306" />
-                    </label>
-                </div>
-                <div class="flex gap-2">
-                    <label data-field style="flex:1">
-                        Username
-                        <input type="text" name="source.username" value="root" />
-                    </label>
-                    <label data-field style="flex:1">
-                        Password
-                        <input type="password" name="source.password" />
-                    </label>
-                </div>
-                <label data-field>
-                    Database
-                    <input type="text" name="source.database" />
-                </label>
-            </article>
             <article class="card" style="flex:1">
                 <header>
                     <h3>Target</h3>
@@ -91,6 +65,35 @@
                 <label data-field>
                     Database
                     <input type="text" name="target.database" />
+                </label>
+            </article>
+            <article class="card" style="flex:1">
+                <header>
+                    <h3>Source</h3>
+                </header>
+                <div class="flex gap-2">
+                    <label data-field style="flex:3">
+                        Host
+                        <input type="text" name="source.host" value="localhost" />
+                    </label>
+                    <label data-field style="flex:1">
+                        Port
+                        <input type="number" name="source.port" value="3306" />
+                    </label>
+                </div>
+                <div class="flex gap-2">
+                    <label data-field style="flex:1">
+                        Username
+                        <input type="text" name="source.username" value="root" />
+                    </label>
+                    <label data-field style="flex:1">
+                        Password
+                        <input type="password" name="source.password" />
+                    </label>
+                </div>
+                <label data-field>
+                    Database
+                    <input type="text" name="source.database" />
                 </label>
             </article>
         </div>
@@ -144,10 +147,11 @@
         </article>
 
         <div class="align-center mt-4">
-            <button data-indicator:_loading data-on:click="@post('/api/compare', {contentType: 'form'})">
+            <button data-indicator:_loading data-show="!$_loading"
+                    data-on:click="@post('/api/compare', {contentType: 'form'})">
                 Start Comparison
-                <span data-show="$_loading">Comparing...</span>
             </button>
+            <button data-show="$_loading" aria-busy="true" data-spinner="small" disabled>Loading</button>
         </div>
     </form>
 

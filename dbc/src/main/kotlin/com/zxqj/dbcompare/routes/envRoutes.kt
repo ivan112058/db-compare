@@ -4,9 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.zxqj.dbcompare.model.CompareRequest
+import com.zxqj.dbcompare.model.DbConfig
 import com.zxqj.dbcompare.model.EnvConfig
 import com.zxqj.dbcompare.model.EnvDbInfo
+import dev.datastar.kotlin.sdk.ElementPatchMode.Inner
+import dev.datastar.kotlin.sdk.PatchElementsOptions
+import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
 import java.io.File
@@ -22,7 +27,8 @@ data class DockerParams(
 )
 
 private data class EnvFilenamePayload(
-    val filename: String = ""
+    val selectedConfig: String = "",
+    val saveConfigName: String = ""
 )
 
 private data class DockerCommandPayload(
@@ -36,48 +42,56 @@ fun Route.envRoutes() {
     val yamlMapper = ObjectMapper(YAMLFactory()).apply { findAndRegisterModules() }
 
     route("/env") {
-        post("/list") {
+        get {
+            respondYamlOptions(envDir, "#env-config-select")
+        }
+
+        post {
+            val payload = call.receive<EnvFilenamePayload>()
+            val file = File(envDir, payload.selectedConfig)
+
+            val text = file.readText(Charsets.UTF_8)
+            application.log.info("Loading config from ${file.absolutePath}, text = $text")
+
             call.respondDataStar {
-                patchSignalsJson(mapOf("envFiles" to listEnvFiles(envDir)))
+                otToast("Configuration loaded")
             }
         }
 
-        post("/load") {
-            val payload = runCatching { call.receive<EnvFilenamePayload>() }.getOrDefault(EnvFilenamePayload())
-            val filename = normalizeYamlName(payload.filename)
-            val file = File(envDir, filename)
+        put {
+            val payload = call.receive<EnvFilenamePayload>()
+            val fileName = payload.saveConfigName
+
+            val file = File(envDir, "$fileName.yml")
+            val optionElements: String
             if (!file.exists()) {
-                call.respondDataStar {
-                    toast("Env config file not found: $filename", "error")
-                }
-                return@post
+                file.createNewFile()
+                optionElements = loadYamlOptions(configDir)
+            } else {
+                optionElements = ""
             }
-            val config = yamlMapper.readValue(file, EnvConfig::class.java)
-            call.respondDataStar {
-                patchSignalsJson(
-                    mapOf(
-                        "selectedEnv" to filename,
-                        "env" to config
-                    )
-                )
-                toast("Env loaded", "success")
-            }
-        }
 
-        post("/save") {
-            val config = call.receive<EnvConfig>()
-            val filename = "${config.name}.yml"
-            val file = File(envDir, filename)
-            yamlMapper.writeValue(file, config)
+            val form = call.receiveParameters()
+            application.log.info("save env $form")
+
+            val request = try {
+                form.toSaveEnvRequest()
+            } catch (e: BadRequestException) {
+                application.log.warn(e.message)
+                call.respondDataStar {
+                    otToast(e.message ?: "env config error", variant = ToastVariant.DANGER)
+                }
+                return@put
+            }
+
+            yamlMapper.writeValue(file, request)
+
             call.respondDataStar {
-                patchSignalsJson(
-                    mapOf(
-                        "envFiles" to listEnvFiles(envDir),
-                        "selectedEnv" to filename,
-                        "env" to config
-                    )
-                )
-                toast("Env saved", "success")
+                if (optionElements.isNotBlank()) {
+                    patchElements(optionElements, PatchElementsOptions(selector = "#env-config-select", mode = Inner))
+                }
+                patchSignals("{\"selectedConfig\": \"$fileName.yml\"}")
+                otToast("Configuration saved")
             }
         }
 
@@ -96,7 +110,7 @@ fun Route.envRoutes() {
             val file = File(configDir, filename)
             yamlMapper.writeValue(file, compareRequest)
             call.respondDataStar {
-                toast("Generated: $filename", "success")
+                otToast("Generated: $filename", variant = ToastVariant.SUCCESS)
             }
         }
 
@@ -118,12 +132,12 @@ fun Route.envRoutes() {
                             "dockerLoading" to false
                         )
                     )
-                    toast("${payload.type} started", "success")
+                    otToast("${payload.type} started", variant = ToastVariant.SUCCESS)
                 }
             } catch (e: Exception) {
                 call.respondDataStar {
                     patchSignalsJson(mapOf("dockerLoading" to false))
-                    toast(e.message ?: "Failed to start docker", "error")
+                    otToast(e.message ?: "Failed to start docker", variant = ToastVariant.DANGER)
                 }
             }
         }
@@ -141,12 +155,12 @@ fun Route.envRoutes() {
                             "dockerLoading" to false
                         )
                     )
-                    toast("${payload.type} stopped", "success")
+                    otToast("${payload.type} stopped", variant = ToastVariant.SUCCESS)
                 }
             } catch (e: Exception) {
                 call.respondDataStar {
                     patchSignalsJson(mapOf("dockerLoading" to false))
-                    toast(e.message ?: "Failed to stop docker", "error")
+                    otToast(e.message ?: "Failed to stop docker", variant = ToastVariant.DANGER)
                 }
             }
         }
@@ -166,6 +180,60 @@ fun Route.envRoutes() {
         }
 
     }
+}
+
+fun Parameters.toSaveEnvRequest(): EnvConfig {
+    fun toDbConfig(name: String): DbConfig {
+        return DbConfig(
+            username = this["$name.username"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.username cannot be empty"),
+            password = this["$name.password"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.password cannot be empty"),
+            database = this["$name.database"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.database cannot be empty")
+        )
+    }
+
+    fun toEnvDbInfo(name: String, separateCodePath: Boolean, sameDBConfig: Boolean, target: EnvDbInfo?): EnvDbInfo {
+        return EnvDbInfo(
+            composePath = if (target == null || separateCodePath) {
+                this["$name.composePath"]?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: throw BadRequestException("$name.composePath cannot be empty")
+            } else {
+                target.composePath
+            },
+            codePath = if (target == null || separateCodePath) {
+                this["$name.codePath"]?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: throw BadRequestException("$name.codePath cannot be empty")
+            } else {
+                target.codePath
+            },
+            gitref = this["$name.gitref"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.composePath cannot be empty"),
+            prefix = this["$name.prefix"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.prefix cannot be empty"),
+            port = this["$name.port"]?.toIntOrNull() ?: throw BadRequestException("$name.port should be 1~65535"),
+            service = if (target == null || !sameDBConfig) {
+                this["$name.service"]?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: throw BadRequestException("$name.service cannot be empty")
+            } else {
+                target.service
+            },
+            dbConfig = if (target == null || !sameDBConfig) {
+                toDbConfig(name)
+            } else {
+                target.dbConfig
+            }
+        )
+    }
+
+    val separateCodePath = this["separateCodePath"]?.toBoolean()
+        ?: throw BadRequestException("separateCodePath must be set")
+    val sameDBConfig = this["sameDBConfig"]?.toBoolean()
+        ?: throw BadRequestException("sameDBConfig must be set")
+    val target = toEnvDbInfo("target", separateCodePath, sameDBConfig, null)
+    val source = toEnvDbInfo("source", separateCodePath, sameDBConfig, target)
+    return EnvConfig(separateCodePath, sameDBConfig, source, target)
 }
 
 private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
@@ -233,14 +301,6 @@ private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
     val newComposePath = File(tempDir, relComposePath).absolutePath
     return params.copy(codePath = tempDir.absolutePath, composePath = newComposePath)
 }
-
-private fun listEnvFiles(envDir: File): List<String> =
-    envDir.listFiles { file ->
-        file.isFile && file.name.endsWith(".yml")
-    }?.map { it.name }?.sorted() ?: emptyList()
-
-private fun normalizeYamlName(filename: String): String =
-    filename.trim().let { if (it.endsWith(".yml")) it else "$it.yml" }
 
 private fun EnvDbInfo.toDockerParams(): DockerParams =
     DockerParams(

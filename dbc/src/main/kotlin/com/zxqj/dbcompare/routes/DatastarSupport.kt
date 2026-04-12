@@ -1,7 +1,6 @@
 package com.zxqj.dbcompare.routes
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import dev.datastar.kotlin.sdk.PatchElementsOptions
 import dev.datastar.kotlin.sdk.Response
 import dev.datastar.kotlin.sdk.ServerSentEventGenerator
 import io.ktor.http.*
@@ -32,8 +31,14 @@ internal fun ServerSentEventGenerator.toast(message: String, type: String = "inf
     executeScript("window.toast(${datastarJson(message)}, ${datastarJson(type)})")
 }
 
-internal fun ServerSentEventGenerator.otToast(message: String, title: String = "", variant: String = "success") {
-    executeScript("ot.toast('$message', '$title', { variant: '$variant' })")
+enum class ToastVariant(val value: String) {
+    SUCCESS("success"),
+    DANGER("danger"),
+    WARNING("warning")
+}
+
+internal fun ServerSentEventGenerator.otToast(message: String, title: String = "", variant: ToastVariant = ToastVariant.SUCCESS) {
+    executeScript("ot.toast('$message', '$title', { variant: '${variant.value}' })")
 }
 
 fun adaptResponse(writer: Writer): Response =

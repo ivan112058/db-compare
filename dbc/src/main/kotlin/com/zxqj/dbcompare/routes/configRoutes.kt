@@ -8,7 +8,6 @@ import dev.datastar.kotlin.sdk.PatchElementsOptions
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
-import io.ktor.util.pipeline.PipelineContext
 import java.io.File
 
 private data class ConfigPayload(
@@ -30,24 +29,8 @@ fun Route.configRoutes() {
     val yamlMapper = ObjectMapper(YAMLFactory()).apply { findAndRegisterModules() }
 
     route("/config") {
-        fun loadConfigFileNameOptions(): String {
-            val files = listConfigFiles(configDir)
-
-            val selectElement = buildString {
-                append("""<option value="">-- Select a file --</option>""")
-                for (file in files) {
-                    append("""<option value="$file">$file</option>""")
-                }
-            }
-            return selectElement
-        }
-
         get {
-            val optionElements = loadConfigFileNameOptions()
-
-            call.respondDataStar {
-                patchElements(optionElements, PatchElementsOptions(selector = "#config-select", mode = Inner))
-            }
+            respondYamlOptions(configDir, "#config-select")
         }
 
         post {
@@ -70,13 +53,15 @@ fun Route.configRoutes() {
             val optionElements: String
             if (!file.exists()) {
                 file.createNewFile()
-                optionElements = loadConfigFileNameOptions()
+                optionElements = loadYamlOptions(configDir)
             } else {
                 optionElements = ""
             }
 
             call.respondDataStar {
-                patchElements(optionElements, PatchElementsOptions(selector = "#config-select", mode = Inner))
+                if (optionElements.isNotBlank()) {
+                    patchElements(optionElements, PatchElementsOptions(selector = "#config-select", mode = Inner))
+                }
                 patchSignals("{\"selectedConfig\": \"$fileName.yml\"}")
                 otToast("Configuration saved")
             }
@@ -84,7 +69,7 @@ fun Route.configRoutes() {
     }
 //    route("/config") {
 //        get("/list") {
-//            val files = listConfigFiles(configDir)
+//            val files = listYamlFiles(configDir)
 //
 //            val selectElement = buildString {
 //                append("""<select id="config-select" data-on-intersect="@get('/api/config/list')">""")
@@ -147,7 +132,7 @@ fun Route.configRoutes() {
 //            call.respondDataStar {
 //                patchSignalsJson(
 //                    mapOf(
-//                        "configFiles" to listConfigFiles(configDir),
+//                        "configFiles" to listYamlFiles(configDir),
 //                        "selectedConfig" to name
 //                    )
 //                )
@@ -156,13 +141,5 @@ fun Route.configRoutes() {
 //        }
 //    }
 }
-
-private fun listConfigFiles(configDir: File): List<String> =
-    configDir.listFiles { file ->
-        file.isFile && file.name.endsWith(".yml")
-    }?.map { it.name }?.sorted() ?: emptyList()
-
-private fun normalizeYamlName(filename: String): String =
-    filename.trim().let { if (it.endsWith(".yml")) it else "$it.yml" }
 
 private fun joinCsv(values: List<String>?): String = values?.joinToString(", ").orEmpty()

@@ -10,9 +10,8 @@ import com.zxqj.dbcompare.service.DatabaseService
 import com.zxqj.dbcompare.service.ResultCacheService
 import com.zxqj.dbcompare.service.SqlGenerationService
 import io.ktor.http.*
-import io.ktor.http.ContentType.Application.Json
 import io.ktor.server.application.*
-import io.ktor.server.plugins.BadRequestException
+import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -36,34 +35,37 @@ fun Route.compareRoutes(
     resultCacheService: ResultCacheService,
     sqlGenerationService: SqlGenerationService
 ) {
-    post("/connect/check") {
-        val config = call.receive<DbConfig>()
-        val result = try {
-            dbService.connect(config).use { mapOf("success" to true) }
-        } catch (e: Exception) {
-            mapOf("error" to (e.message ?: "Unknown error"))
-        }
-        call.respond(result)
-    }
-
     post("/compare") {
         val form = call.receiveParameters()
         application.log.info("compare $form")
 
+        val request = try {
+            form.toCompareRequest()
+        } catch (e: BadRequestException) {
+            application.log.warn(e.message)
+            call.respondDataStar {
+                otToast(e.message ?: "config error", variant = ToastVariant.DANGER)
+            }
+            return@post
+        }
+
         try {
-            val request = form.toCompareRequest()
             val diffs = compareService.compare(request)
 
-
-        } catch (e: Exception) {
-            if (e is BadRequestException){
-                application.log.warn(e.message)
-            } else{
-                application.log.error("compare error", e)
+            if (diffs.isEmpty()) {
+                call.respondDataStar {
+                    otToast("NO DIFF", variant = ToastVariant.SUCCESS)
+                }
+            } else {
+                val id = resultCacheService.saveResult(diffs)
+                call.respondDataStar {
+                    executeScript("window.location.href = '/diff.html?id=$id'")
+                }
             }
+        } catch (e: Exception) {
+            application.log.error("compare error", e)
             call.respondDataStar {
-                patchSignalsJson(mapOf("loading" to false))
-                otToast(e.message ?: "Compare failed", "error", "danger")
+                otToast(e.message ?: "Compare failed", variant = ToastVariant.DANGER)
             }
         }
 //        try {
@@ -175,11 +177,15 @@ private fun List<TableDiff>.toSummaries(): List<TableSummary> =
 fun Parameters.toCompareRequest(): CompareRequest {
     fun toDbConfig(name: String): DbConfig {
         return DbConfig(
-            host = this["$name.host"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.host 不能为空"),
-            port = this["$name.port"]?.toIntOrNull() ?: throw BadRequestException("$name.port 错误"),
-            username = this["$name.username"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.username 不能为空"),
-            password = this["$name.password"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.password 不能为空"),
-            database = this["$name.database"]?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("$name.database 不能为空")
+            host = this["$name.host"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.host cannot be empty"),
+            port = this["$name.port"]?.toIntOrNull() ?: throw BadRequestException("$name.port should be 1~65535"),
+            username = this["$name.username"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.username cannot be empty"),
+            password = this["$name.password"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.password cannot be empty"),
+            database = this["$name.database"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw BadRequestException("$name.database cannot be empty")
         )
     }
 

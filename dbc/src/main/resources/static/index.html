@@ -50,7 +50,7 @@
     input, select { width: 100%; box-sizing: border-box; }
   </style>
 </head>
-<body data-signals="{view:'config',resultId:'',tables:[],selectedTable:null,detail:null,loading:false,sqlType:'upgrade',upgradeSql:'',rollbackSql:'',configFiles:[],selectedConfig:'',saveConfigName:'',source:{host:'localhost',port:3406,username:'root',password:'',database:''},target:{host:'localhost',port:3306,username:'root',password:'',database:''},ignoreFields:'',excludeTables:'',ignoreDataTables:'',specifiedPrimaryKeys:'',treeTableConfig:'',excludeDataRows:'',includeDataRows:'',envFiles:[],selectedEnv:'',env:{name:'',source:{port:3307,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},target:{port:3308,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},separateCodePath:false,ignoreFields:[],excludeTables:[],ignoreDataTables:[],specifiedPrimaryKeys:[],excludeDataRows:[],includeDataRows:[]},sourceStatus:false,targetStatus:false,dockerLoading:false}" data-init="@post('/api/config/list'); @post('/api/env/list')">
+<body data-signals="{view:'config',resultId:'',tables:[],selectedTable:null,detail:null,loading:false,sqlType:'upgrade',upgradeSql:'',rollbackSql:'',configFiles:[],selectedConfig:'',saveConfigName:'',source:{host:'localhost',port:3406,username:'root',password:'',database:''},target:{host:'localhost',port:3306,username:'root',password:'',database:''},ignoreFields:'',excludeTables:'',ignoreDataTables:'',specifiedPrimaryKeys:'',treeTableConfig:'',excludeDataRows:'',includeDataRows:'',envFiles:[],selectedEnv:'',env:{name:'',source:{port:3307,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},target:{port:3308,serviceName:'mysql',containerPrefix:'',codePath:'',composePath:'',gitRef:'',dbConfig:{username:'root',password:'',database:''}},separateCodePath:false,ignoreFields:[],excludeTables:[],ignoreDataTables:[],specifiedPrimaryKeys:[],excludeDataRows:[],includeDataRows:[]},sourceStatus:false,targetStatus:false,dockerLoading:false}" data-init="@post('/api/config/list'); @get('/api/env')">
 
   <header style="background:#1e293b;color:white;padding:0.75rem 1.5rem;display:flex;justify-content:space-between;align-items:center;">
     <h1 style="margin:0;font-size:1.2rem;font-weight:600;">DB Compare</h1>
@@ -176,10 +176,10 @@
       <div class="card mb-2">
         <div class="flex" style="justify-content:space-between;">
           <div class="flex">
-            <select data-bind="selectedEnv" data-on:change="@post('/api/env/load', {payload:{filename:$selectedEnv}})" data-effect="renderSelectOptions(el, $envFiles, $selectedEnv, '-- env config --')" style="width:200px">
+            <select id="env-config-select" data-bind="selectedEnv" data-on:change="@post('/api/env', {payload:{filename:$selectedEnv}})" style="width:200px">
               <option value="">-- env config --</option>
             </select>
-            <button data-on:click="@post('/api/env/save', {payload:$env})">Save</button>
+            <button data-on:click="@put('/api/env', {payload:$env})">Save</button>
             <button data-on:click="@post('/api/env/generate', {payload:$env})">Generate</button>
           </div>
           <div class="flex">

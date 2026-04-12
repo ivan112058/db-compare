@@ -1,23 +1,37 @@
 package com.zxqj.dbcompare.service
 
+import com.mysql.cj.jdbc.exceptions.CommunicationsException
 import com.zxqj.dbcompare.model.CompareRequest
 import com.zxqj.dbcompare.model.TableDiff
 import com.zxqj.dbcompare.model.structure.Column
 import com.zxqj.dbcompare.model.structure.TableStructure
+import org.slf4j.LoggerFactory
 import java.sql.Connection
 import java.sql.SQLException
 
 class CompareService(private val dbService: DatabaseService) {
+    private val log = LoggerFactory.getLogger(javaClass)
 
     @Throws(SQLException::class)
     fun compare(request: CompareRequest): List<TableDiff> {
-        val sourceConfig = request.source ?: throw IllegalArgumentException("Source config is required")
-        val targetConfig = request.target ?: throw IllegalArgumentException("Target config is required")
+        val sourceConnCheck = try {
+            dbService.connect(request.source!!)
+        } catch (e: CommunicationsException) {
+            throw SQLException("connect SOURCE database failed: ${e.message?.substringBefore('\n')}", e)
+        } catch (e: Exception) {
+            throw SQLException("connect SOURCE database failed: ${e.message}", e)
+        }
 
-        return dbService.connect(sourceConfig).use { sourceConn ->
-            dbService.connect(targetConfig).use { targetConn ->
-                val sourceTables = dbService.getTableNames(sourceConn, sourceConfig.database).toHashSet()
-                val targetTables = dbService.getTableNames(targetConn, targetConfig.database).toHashSet()
+        return sourceConnCheck.use { sourceConn ->
+            val targetConnCheck = try {
+                dbService.connect(request.target!!)
+            } catch (e: Exception) {
+                throw SQLException("connect TARGET database failed: ${e.message}", e)
+            }
+
+            targetConnCheck.use { targetConn ->
+                val sourceTables = dbService.getTableNames(sourceConn, request.source.database).toHashSet()
+                val targetTables = dbService.getTableNames(targetConn, request.target.database).toHashSet()
                 val allTables = (sourceTables + targetTables).toSortedSet()
 
                 allTables.mapNotNull { tableName ->
@@ -42,12 +56,18 @@ class CompareService(private val dbService: DatabaseService) {
         val diff = TableDiff(tableName)
 
         if (inSource && !inTarget) {
-            try { diff.sourceDDL = dbService.getCreateTableSql(sourceConn, tableName) }
-            catch (e: Exception) { System.err.println("Failed to get source DDL for $tableName: ${e.message}") }
+            try {
+                diff.sourceDDL = dbService.getCreateTableSql(sourceConn, tableName)
+            } catch (e: Exception) {
+                log.error("Failed to get source DDL for $tableName: ${e.message}")
+            }
         }
         if (!inSource && inTarget) {
-            try { diff.targetDDL = dbService.getCreateTableSql(targetConn, tableName) }
-            catch (e: Exception) { System.err.println("Failed to get target DDL for $tableName: ${e.message}") }
+            try {
+                diff.targetDDL = dbService.getCreateTableSql(targetConn, tableName)
+            } catch (e: Exception) {
+                log.error("Failed to get target DDL for $tableName: ${e.message}")
+            }
         }
 
         val (sourceStruct, targetStruct) = resolveStructures(tableName, inSource, inTarget, sourceConn, targetConn)
@@ -82,7 +102,7 @@ class CompareService(private val dbService: DatabaseService) {
         sourceConn: Connection, targetConn: Connection
     ): Pair<TableStructure?, TableStructure?> =
         (if (inSource) dbService.getTableStructure(sourceConn, tableName) else null) to
-        (if (inTarget) dbService.getTableStructure(targetConn, tableName) else null)
+                (if (inTarget) dbService.getTableStructure(targetConn, tableName) else null)
 
     private data class DataComparisonResult(
         val rowCount: TableDiff.RowCount,
@@ -116,7 +136,8 @@ class CompareService(private val dbService: DatabaseService) {
             val specPKs = getPrimaryKeys(tableName, request.specifiedPrimaryKeys, null)
             if (!specPKs.isNullOrEmpty()) {
                 val parentSelects = specPKs.joinToString(", ") { pk -> "p.`$pk` AS `__parent_$pk`" }
-                customQuery = "SELECT m.*, $parentSelects FROM `$tableName` m LEFT JOIN `$tableName` p ON m.`${treeConfig.parentIdColumn}` = p.`${treeConfig.idColumn}`"
+                customQuery =
+                    "SELECT m.*, $parentSelects FROM `$tableName` m LEFT JOIN `$tableName` p ON m.`${treeConfig.parentIdColumn}` = p.`${treeConfig.idColumn}`"
             }
         }
 
@@ -261,9 +282,10 @@ class CompareService(private val dbService: DatabaseService) {
         sourceData: List<Map<String, Any?>>, targetData: List<Map<String, Any?>>,
         primaryKeys: List<String>?, tableName: String
     ): TableDiff.DataDiff = if (!primaryKeys.isNullOrEmpty()) {
-        try { computeDiffWithPK(sourceData, targetData, primaryKeys) }
-        catch (e: Exception) {
-            System.err.println("Primary key comparison failed for table $tableName: ${e.message}")
+        try {
+            computeDiffWithPK(sourceData, targetData, primaryKeys)
+        } catch (e: Exception) {
+            log.error("Primary key comparison failed for table $tableName: ${e.message}")
             computeDiffSimple(sourceData, targetData)
         }
     } else {
