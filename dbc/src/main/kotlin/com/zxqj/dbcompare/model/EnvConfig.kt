@@ -1,6 +1,7 @@
 package com.zxqj.dbcompare.model
 
 data class EnvConfig(
+    val projectName: String,
     val separateCodePath: Boolean = false,
     val sameDBConfig: Boolean = false,
     val source: EnvDbInfo = EnvDbInfo(),

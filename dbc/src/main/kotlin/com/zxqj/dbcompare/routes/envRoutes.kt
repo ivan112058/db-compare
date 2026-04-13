@@ -3,7 +3,6 @@ package com.zxqj.dbcompare.routes
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
-import com.zxqj.dbcompare.model.CompareRequest
 import com.zxqj.dbcompare.model.DbConfig
 import com.zxqj.dbcompare.model.EnvConfig
 import com.zxqj.dbcompare.model.EnvDbInfo
@@ -51,26 +50,16 @@ fun Route.envRoutes() {
             val file = File(envDir, payload.selectedConfig)
 
             val text = file.readText(Charsets.UTF_8)
+            val envConfig = yamlMapper.readValue(file, EnvConfig::class.java)
             application.log.info("Loading config from ${file.absolutePath}, text = $text")
 
             call.respondDataStar {
+                patchElements(envConfig.projectName, PatchElementsOptions(selector = "#env-config-select", mode = Inner))
                 otToast("Configuration loaded")
             }
         }
 
         put {
-            val payload = call.receive<EnvFilenamePayload>()
-            val fileName = payload.saveConfigName
-
-            val file = File(envDir, "$fileName.yml")
-            val optionElements: String
-            if (!file.exists()) {
-                file.createNewFile()
-                optionElements = loadYamlOptions(configDir)
-            } else {
-                optionElements = ""
-            }
-
             val form = call.receiveParameters()
             application.log.info("save env $form")
 
@@ -84,100 +73,109 @@ fun Route.envRoutes() {
                 return@put
             }
 
+            val file = File(envDir, "${request.projectName}.yml")
+            val optionElements: String
+            if (!file.exists()) {
+                file.createNewFile()
+                optionElements = loadYamlOptions(envDir)
+            } else {
+                optionElements = ""
+            }
+
             yamlMapper.writeValue(file, request)
 
             call.respondDataStar {
                 if (optionElements.isNotBlank()) {
                     patchElements(optionElements, PatchElementsOptions(selector = "#env-config-select", mode = Inner))
                 }
-                patchSignals("{\"selectedConfig\": \"$fileName.yml\"}")
+                patchSignals("{\"selectedConfig\": \"${request.projectName}.yml\"}")
                 otToast("Configuration saved")
             }
         }
 
-        post("/generate") {
-            val config = call.receive<EnvConfig>()
-            val compareRequest = CompareRequest(
-                source = config.source.dbConfig.copy(host = "localhost", port = config.source.port),
-                target = config.target.dbConfig.copy(host = "localhost", port = config.target.port),
-                ignoreFields = config.ignoreFields,
-                excludeTables = config.excludeTables,
-                ignoreDataTables = config.ignoreDataTables,
-                specifiedPrimaryKeys = config.specifiedPrimaryKeys,
-                excludeDataRows = config.excludeDataRows,
-            )
-            val filename = "${config.name}_local.yml"
-            val file = File(configDir, filename)
-            yamlMapper.writeValue(file, compareRequest)
-            call.respondDataStar {
-                otToast("Generated: $filename", variant = ToastVariant.SUCCESS)
-            }
-        }
+//        post("/generate") {
+//            val config = call.receive<EnvConfig>()
+//            val compareRequest = CompareRequest(
+//                source = config.source.dbConfig.copy(host = "localhost", port = config.source.port),
+//                target = config.target.dbConfig.copy(host = "localhost", port = config.target.port),
+//                ignoreFields = config.ignoreFields,
+//                excludeTables = config.excludeTables,
+//                ignoreDataTables = config.ignoreDataTables,
+//                specifiedPrimaryKeys = config.specifiedPrimaryKeys,
+//                excludeDataRows = config.excludeDataRows,
+//            )
+//            val filename = "${config.name}_local.yml"
+//            val file = File(configDir, filename)
+//            yamlMapper.writeValue(file, compareRequest)
+//            call.respondDataStar {
+//                otToast("Generated: $filename", variant = ToastVariant.SUCCESS)
+//            }
+//        }
 
-        post("/docker/start") {
-            try {
-                val payload = call.receive<DockerCommandPayload>()
-                val params = payload.side.toDockerParams()
-                val effectiveParams = if (!params.gitRef.isNullOrEmpty()) {
-                    prepareIsolatedEnvironment(params)
-                } else {
-                    params
-                }
-                runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
-                val isRunning = resolveRunning(effectiveParams)
-                call.respondDataStar {
-                    patchSignalsJson(
-                        mapOf(
-                            "${payload.type}Status" to isRunning,
-                            "dockerLoading" to false
-                        )
-                    )
-                    otToast("${payload.type} started", variant = ToastVariant.SUCCESS)
-                }
-            } catch (e: Exception) {
-                call.respondDataStar {
-                    patchSignalsJson(mapOf("dockerLoading" to false))
-                    otToast(e.message ?: "Failed to start docker", variant = ToastVariant.DANGER)
-                }
-            }
-        }
+//        post("/docker/start") {
+//            try {
+//                val payload = call.receive<DockerCommandPayload>()
+//                val params = payload.side.toDockerParams()
+//                val effectiveParams = if (!params.gitRef.isNullOrEmpty()) {
+//                    prepareIsolatedEnvironment(params)
+//                } else {
+//                    params
+//                }
+//                runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
+//                val isRunning = resolveRunning(effectiveParams)
+//                call.respondDataStar {
+//                    patchSignalsJson(
+//                        mapOf(
+//                            "${payload.type}Status" to isRunning,
+//                            "dockerLoading" to false
+//                        )
+//                    )
+//                    otToast("${payload.type} started", variant = ToastVariant.SUCCESS)
+//                }
+//            } catch (e: Exception) {
+//                call.respondDataStar {
+//                    patchSignalsJson(mapOf("dockerLoading" to false))
+//                    otToast(e.message ?: "Failed to start docker", variant = ToastVariant.DANGER)
+//                }
+//            }
+//        }
+//
+//        post("/docker/stop") {
+//            try {
+//                val payload = call.receive<DockerCommandPayload>()
+//                val params = payload.side.toDockerParams()
+//                runDockerCompose(params, "down")
+//                val isRunning = resolveRunning(params)
+//                call.respondDataStar {
+//                    patchSignalsJson(
+//                        mapOf(
+//                            "${payload.type}Status" to isRunning,
+//                            "dockerLoading" to false
+//                        )
+//                    )
+//                    otToast("${payload.type} stopped", variant = ToastVariant.SUCCESS)
+//                }
+//            } catch (e: Exception) {
+//                call.respondDataStar {
+//                    patchSignalsJson(mapOf("dockerLoading" to false))
+//                    otToast(e.message ?: "Failed to stop docker", variant = ToastVariant.DANGER)
+//                }
+//            }
+//        }
 
-        post("/docker/stop") {
-            try {
-                val payload = call.receive<DockerCommandPayload>()
-                val params = payload.side.toDockerParams()
-                runDockerCompose(params, "down")
-                val isRunning = resolveRunning(params)
-                call.respondDataStar {
-                    patchSignalsJson(
-                        mapOf(
-                            "${payload.type}Status" to isRunning,
-                            "dockerLoading" to false
-                        )
-                    )
-                    otToast("${payload.type} stopped", variant = ToastVariant.SUCCESS)
-                }
-            } catch (e: Exception) {
-                call.respondDataStar {
-                    patchSignalsJson(mapOf("dockerLoading" to false))
-                    otToast(e.message ?: "Failed to stop docker", variant = ToastVariant.DANGER)
-                }
-            }
-        }
-
-        post("/docker/status") {
-            val config = call.receive<EnvConfig>()
-            val sourceStatus = resolveRunning(config.source.toDockerParams())
-            val targetStatus = resolveRunning(config.target.toDockerParams())
-            call.respondDataStar {
-                patchSignalsJson(
-                    mapOf(
-                        "sourceStatus" to sourceStatus,
-                        "targetStatus" to targetStatus
-                    )
-                )
-            }
-        }
+//        post("/docker/status") {
+//            val config = call.receive<EnvConfig>()
+//            val sourceStatus = resolveRunning(config.source.toDockerParams())
+//            val targetStatus = resolveRunning(config.target.toDockerParams())
+//            call.respondDataStar {
+//                patchSignalsJson(
+//                    mapOf(
+//                        "sourceStatus" to sourceStatus,
+//                        "targetStatus" to targetStatus
+//                    )
+//                )
+//            }
+//        }
 
     }
 }
@@ -227,13 +225,13 @@ fun Parameters.toSaveEnvRequest(): EnvConfig {
         )
     }
 
-    val separateCodePath = this["separateCodePath"]?.toBoolean()
-        ?: throw BadRequestException("separateCodePath must be set")
-    val sameDBConfig = this["sameDBConfig"]?.toBoolean()
-        ?: throw BadRequestException("sameDBConfig must be set")
+    val projectName = this["projectName"]?.trim()?.takeIf { it.isNotEmpty() }
+        ?: throw BadRequestException("project name cannot be empty")
+    val separateCodePath = this["separateCodePath"]?.trim() == "on"
+    val sameDBConfig = this["sameDBConfig"]?.trim() == "on"
     val target = toEnvDbInfo("target", separateCodePath, sameDBConfig, null)
     val source = toEnvDbInfo("source", separateCodePath, sameDBConfig, target)
-    return EnvConfig(separateCodePath, sameDBConfig, source, target)
+    return EnvConfig(projectName, separateCodePath, sameDBConfig, source, target)
 }
 
 private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
@@ -302,16 +300,16 @@ private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
     return params.copy(codePath = tempDir.absolutePath, composePath = newComposePath)
 }
 
-private fun EnvDbInfo.toDockerParams(): DockerParams =
-    DockerParams(
-        codePath = codePath,
-        composePath = composePath,
-        prefix = containerPrefix,
-        serviceName = serviceName,
-        port = port,
-        excludeInitSql = excludeInitSql,
-        gitRef = gitRef
-    )
+//private fun EnvDbInfo.toDockerParams(): DockerParams =
+//    DockerParams(
+//        codePath = codePath,
+//        composePath = composePath,
+//        prefix = containerPrefix,
+//        serviceName = serviceName,
+//        port = port,
+//        excludeInitSql = excludeInitSql,
+//        gitRef = gitRef
+//    )
 
 private fun resolveRunning(params: DockerParams): Boolean =
     if (params.composePath.isBlank() || params.serviceName.isBlank()) {
