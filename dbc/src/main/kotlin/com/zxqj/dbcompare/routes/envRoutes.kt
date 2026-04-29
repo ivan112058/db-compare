@@ -3,11 +3,14 @@ package com.zxqj.dbcompare.routes
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.zxqj.dbcompare.model.CompareRequest
 import com.zxqj.dbcompare.model.DbConfig
 import com.zxqj.dbcompare.model.EnvConfig
 import com.zxqj.dbcompare.model.EnvDbInfo
 import dev.datastar.kotlin.sdk.ElementPatchMode.Inner
 import dev.datastar.kotlin.sdk.PatchElementsOptions
+import dev.datastar.kotlin.sdk.ServerSentEventGenerator
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.*
@@ -26,13 +29,17 @@ data class DockerParams(
 )
 
 private data class EnvFilenamePayload(
-    val selectedConfig: String = "",
-    val saveConfigName: String = ""
+    val selectedConfig: String = ""
 )
 
 private data class DockerCommandPayload(
     val type: String = "",
     val side: EnvDbInfo = EnvDbInfo()
+)
+
+internal data class SavedEnvConfig(
+    val envConfig: EnvConfig,
+    val optionElements: String
 )
 
 fun Route.envRoutes() {
@@ -42,7 +49,7 @@ fun Route.envRoutes() {
 
     route("/env") {
         get {
-            respondYamlOptions(envDir, "#env-config-select")
+            call.respondYamlOptions(envDir, "#env-config-select")
         }
 
         post {
@@ -50,11 +57,12 @@ fun Route.envRoutes() {
             val file = File(envDir, payload.selectedConfig)
 
             val text = file.readText(Charsets.UTF_8)
-            val envConfig = yamlMapper.readValue(file, EnvConfig::class.java)
+
+            val envConfig: EnvConfig = yamlMapper.readValue<EnvConfig>(file)
             application.log.info("Loading config from ${file.absolutePath}, text = $text")
 
             call.respondDataStar {
-                patchElements(envConfig.projectName, PatchElementsOptions(selector = "#env-config-select", mode = Inner))
+                fillEnvForm(envConfig)
                 otToast("Configuration loaded")
             }
         }
@@ -63,8 +71,8 @@ fun Route.envRoutes() {
             val form = call.receiveParameters()
             application.log.info("save env $form")
 
-            val request = try {
-                form.toSaveEnvRequest()
+            val saved = try {
+                saveEnvConfig(form, envDir, yamlMapper)
             } catch (e: BadRequestException) {
                 application.log.warn(e.message)
                 call.respondDataStar {
@@ -73,44 +81,43 @@ fun Route.envRoutes() {
                 return@put
             }
 
-            val file = File(envDir, "${request.projectName}.yml")
-            val optionElements: String
-            if (!file.exists()) {
-                file.createNewFile()
-                optionElements = loadYamlOptions(envDir)
-            } else {
-                optionElements = ""
-            }
-
-            yamlMapper.writeValue(file, request)
-
             call.respondDataStar {
-                if (optionElements.isNotBlank()) {
-                    patchElements(optionElements, PatchElementsOptions(selector = "#env-config-select", mode = Inner))
+                if (saved.optionElements.isNotBlank()) {
+                    patchElements(
+                        saved.optionElements,
+                        PatchElementsOptions(selector = "#env-config-select", mode = Inner)
+                    )
                 }
-                patchSignals("{\"selectedConfig\": \"${request.projectName}.yml\"}")
+                patchSignals("{\"selectedConfig\": \"${saved.envConfig.projectName}.yml\"}")
                 otToast("Configuration saved")
             }
         }
 
-//        post("/generate") {
-//            val config = call.receive<EnvConfig>()
-//            val compareRequest = CompareRequest(
-//                source = config.source.dbConfig.copy(host = "localhost", port = config.source.port),
-//                target = config.target.dbConfig.copy(host = "localhost", port = config.target.port),
-//                ignoreFields = config.ignoreFields,
-//                excludeTables = config.excludeTables,
-//                ignoreDataTables = config.ignoreDataTables,
-//                specifiedPrimaryKeys = config.specifiedPrimaryKeys,
-//                excludeDataRows = config.excludeDataRows,
-//            )
-//            val filename = "${config.name}_local.yml"
-//            val file = File(configDir, filename)
-//            yamlMapper.writeValue(file, compareRequest)
-//            call.respondDataStar {
-//                otToast("Generated: $filename", variant = ToastVariant.SUCCESS)
-//            }
-//        }
+        post("/generate") {
+            val form = call.receiveParameters()
+            application.log.info("generate config $form")
+
+            val saved = try {
+                saveAndGenerateConfig(form, envDir, configDir, yamlMapper)
+            } catch (e: BadRequestException) {
+                application.log.warn(e.message)
+                call.respondDataStar {
+                    otToast(e.message ?: "env config error", variant = ToastVariant.DANGER)
+                }
+                return@post
+            }
+
+            call.respondDataStar {
+                if (saved.optionElements.isNotBlank()) {
+                    patchElements(
+                        saved.optionElements,
+                        PatchElementsOptions(selector = "#env-config-select", mode = Inner)
+                    )
+                }
+                patchSignals("{\"selectedConfig\": \"${saved.envConfig.projectName}.yml\"}")
+                otToast("Generated: ${saved.envConfig.projectName}.yml", variant = ToastVariant.SUCCESS)
+            }
+        }
 
 //        post("/docker/start") {
 //            try {
@@ -181,6 +188,11 @@ fun Route.envRoutes() {
 }
 
 fun Parameters.toSaveEnvRequest(): EnvConfig {
+    fun toStringList(name: String): List<String>? {
+        val value = this[name] ?: return null
+        return ObjectMapper().findAndRegisterModules().readValue(value, List::class.java).map { it.toString() }
+    }
+
     fun toDbConfig(name: String): DbConfig {
         return DbConfig(
             username = this["$name.username"]?.trim()?.takeIf { it.isNotEmpty() }
@@ -207,7 +219,7 @@ fun Parameters.toSaveEnvRequest(): EnvConfig {
                 target.codePath
             },
             gitref = this["$name.gitref"]?.trim()?.takeIf { it.isNotEmpty() }
-                ?: throw BadRequestException("$name.composePath cannot be empty"),
+                ?: throw BadRequestException("$name.gitref cannot be empty"),
             prefix = this["$name.prefix"]?.trim()?.takeIf { it.isNotEmpty() }
                 ?: throw BadRequestException("$name.prefix cannot be empty"),
             port = this["$name.port"]?.toIntOrNull() ?: throw BadRequestException("$name.port should be 1~65535"),
@@ -217,6 +229,7 @@ fun Parameters.toSaveEnvRequest(): EnvConfig {
             } else {
                 target.service
             },
+            excludeInitSql = toStringList("$name.excludeInitSql"),
             dbConfig = if (target == null || !sameDBConfig) {
                 toDbConfig(name)
             } else {
@@ -232,6 +245,63 @@ fun Parameters.toSaveEnvRequest(): EnvConfig {
     val target = toEnvDbInfo("target", separateCodePath, sameDBConfig, null)
     val source = toEnvDbInfo("source", separateCodePath, sameDBConfig, target)
     return EnvConfig(projectName, separateCodePath, sameDBConfig, source, target)
+}
+
+internal fun saveEnvConfig(
+    form: Parameters,
+    envDir: File,
+    yamlMapper: ObjectMapper
+): SavedEnvConfig {
+    val request = form.toSaveEnvRequest()
+    val file = File(envDir, "${request.projectName}.yml")
+    val optionElements = if (!file.exists()) {
+        file.createNewFile()
+        loadYamlOptions(envDir)
+    } else {
+        ""
+    }
+
+    yamlMapper.writeValue(file, request)
+    return SavedEnvConfig(request, optionElements)
+}
+
+internal fun EnvConfig.toGeneratedCompareRequest(): CompareRequest =
+    CompareRequest(
+        source = source.dbConfig.copy(host = "localhost", port = source.port),
+        target = target.dbConfig.copy(host = "localhost", port = target.port)
+    )
+
+internal fun saveAndGenerateConfig(
+    form: Parameters,
+    envDir: File,
+    configDir: File,
+    yamlMapper: ObjectMapper
+): SavedEnvConfig {
+    val saved = saveEnvConfig(form, envDir, yamlMapper)
+    val compareFile = File(configDir, "${saved.envConfig.projectName}.yml")
+    yamlMapper.writeValue(compareFile, saved.envConfig.toGeneratedCompareRequest())
+    return saved
+}
+
+internal fun ServerSentEventGenerator.fillEnvForm(envConfig: EnvConfig) {
+    setInputValue("projectName", envConfig.projectName)
+    setCheckboxValue("separateCodePath", envConfig.separateCodePath)
+    setCheckboxValue("sameDBConfig", envConfig.sameDBConfig)
+    fillEnvDbInfo("target", envConfig.target)
+    fillEnvDbInfo("source", envConfig.source)
+}
+
+private fun ServerSentEventGenerator.fillEnvDbInfo(prefix: String, envDbInfo: EnvDbInfo) {
+    setInputValue("$prefix.composePath", envDbInfo.composePath)
+    setInputValue("$prefix.codePath", envDbInfo.codePath)
+    setInputValue("$prefix.gitref", envDbInfo.gitref.orEmpty())
+    setInputValue("$prefix.prefix", envDbInfo.prefix)
+    setInputValue("$prefix.port", envDbInfo.port.toString())
+    setInputValue("$prefix.service", envDbInfo.service)
+    setChipInputValue("$prefix.excludeInitSql", envDbInfo.excludeInitSql.orEmpty())
+    setInputValue("$prefix.database", envDbInfo.dbConfig.database.orEmpty())
+    setInputValue("$prefix.username", envDbInfo.dbConfig.username.orEmpty())
+    setInputValue("$prefix.password", envDbInfo.dbConfig.password.orEmpty())
 }
 
 private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
@@ -300,16 +370,16 @@ private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
     return params.copy(codePath = tempDir.absolutePath, composePath = newComposePath)
 }
 
-//private fun EnvDbInfo.toDockerParams(): DockerParams =
-//    DockerParams(
-//        codePath = codePath,
-//        composePath = composePath,
-//        prefix = containerPrefix,
-//        serviceName = serviceName,
-//        port = port,
-//        excludeInitSql = excludeInitSql,
-//        gitRef = gitRef
-//    )
+private fun EnvDbInfo.toDockerParams(): DockerParams =
+    DockerParams(
+        codePath = codePath,
+        composePath = composePath,
+        prefix = prefix,
+        serviceName = service,
+        port = port,
+        excludeInitSql = excludeInitSql,
+        gitRef = gitref
+    )
 
 private fun resolveRunning(params: DockerParams): Boolean =
     if (params.composePath.isBlank() || params.serviceName.isBlank()) {
