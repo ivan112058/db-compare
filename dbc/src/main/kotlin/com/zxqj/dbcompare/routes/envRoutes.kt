@@ -153,29 +153,36 @@ fun Route.envRoutes() {
                 }
             }
         }
-//
-//        post("/docker/stop") {
-//            try {
-//                val payload = call.receive<DockerCommandPayload>()
-//                val params = payload.side.toDockerParams()
-//                runDockerCompose(params, "down")
-//                val isRunning = resolveRunning(params)
-//                call.respondDataStar {
-//                    patchSignalsJson(
-//                        mapOf(
-//                            "${payload.type}Status" to isRunning,
-//                            "dockerLoading" to false
-//                        )
-//                    )
-//                    otToast("${payload.type} stopped", variant = ToastVariant.SUCCESS)
-//                }
-//            } catch (e: Exception) {
-//                call.respondDataStar {
-//                    patchSignalsJson(mapOf("dockerLoading" to false))
-//                    otToast(e.message ?: "Failed to stop docker", variant = ToastVariant.DANGER)
-//                }
-//            }
-//        }
+
+        post("/docker/stop") {
+            val form = call.receiveParameters()
+            val type = call.request.queryParameters["type"] ?: "target"
+
+            val envConfig = try {
+                form.toSaveEnvRequest()
+            } catch (e: BadRequestException) {
+                call.respondDataStar {
+                    otToast(e.message ?: "Invalid form data", variant = ToastVariant.DANGER)
+                }
+                return@post
+            }
+
+            val side = if (type == "source") envConfig.source else envConfig.target
+            val params = side.toDockerParams()
+
+            try {
+                runDockerCompose(params, "down")
+                val isRunning = resolveRunning(params)
+                call.respondDataStar {
+                    patchSignalsJson(mapOf(type to mapOf("running" to isRunning)))
+                    otToast("$type stopped", variant = ToastVariant.SUCCESS)
+                }
+            } catch (e: Exception) {
+                call.respondDataStar {
+                    otToast(e.message ?: "Failed to stop docker", variant = ToastVariant.DANGER)
+                }
+            }
+        }
 
 //        post("/docker/status") {
 //            val config = call.receive<EnvConfig>()
