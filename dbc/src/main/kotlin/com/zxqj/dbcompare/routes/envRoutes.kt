@@ -438,11 +438,9 @@ private fun checkContainerStatus(codePath: String, composePath: String, prefix: 
     return output.isNotBlank()
 }
 
-private fun runDockerCompose(params: DockerParams, vararg commands: String): Map<String, Any> {
-    var tempComposeFile: File? = null
+private fun runDockerCompose(params: DockerParams, vararg commands: String) {
+    val tempComposeFile = createModifiedComposeFile(params)
     try {
-        tempComposeFile = createModifiedComposeFile(params)
-
         val cmd = mutableListOf("docker-compose")
         cmd.add("-f"); cmd.add(tempComposeFile.absolutePath)
         if (params.prefix.isNotEmpty()) {
@@ -472,12 +470,8 @@ private fun runDockerCompose(params: DockerParams, vararg commands: String): Map
         if (exitCode != 0) {
             throw RuntimeException("Docker command failed with code $exitCode: $output")
         }
-        return mapOf("success" to true, "output" to output.toString())
-    } catch (e: Exception) {
-        e.printStackTrace()
-        return mapOf("success" to false, "error" to (e.message ?: "Unknown error"))
     } finally {
-        tempComposeFile?.delete()
+        tempComposeFile.delete()
     }
 }
 
