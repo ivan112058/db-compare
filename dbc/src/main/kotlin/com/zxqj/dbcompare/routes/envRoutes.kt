@@ -61,8 +61,17 @@ fun Route.envRoutes() {
             val envConfig: EnvConfig = yamlMapper.readValue<EnvConfig>(file)
             application.log.info("Loading config from ${file.absolutePath}, text = $text")
 
+            val targetRunning = resolveRunning(envConfig.target.toDockerParams())
+            val sourceRunning = resolveRunning(envConfig.source.toDockerParams())
+
             call.respondDataStar {
                 fillEnvForm(envConfig)
+                patchSignalsJson(
+                    mapOf(
+                        "target" to mapOf("running" to targetRunning),
+                        "source" to mapOf("running" to sourceRunning)
+                    )
+                )
                 otToast("Configuration loaded")
             }
         }
