@@ -32,11 +32,6 @@ private data class EnvFilenamePayload(
     val selectedConfig: String = ""
 )
 
-private data class DockerCommandPayload(
-    val type: String = "",
-    val side: EnvDbInfo = EnvDbInfo()
-)
-
 internal data class SavedEnvConfig(
     val envConfig: EnvConfig,
     val optionElements: String
@@ -192,20 +187,6 @@ fun Route.envRoutes() {
                 }
             }
         }
-
-//        post("/docker/status") {
-//            val config = call.receive<EnvConfig>()
-//            val sourceStatus = resolveRunning(config.source.toDockerParams())
-//            val targetStatus = resolveRunning(config.target.toDockerParams())
-//            call.respondDataStar {
-//                patchSignalsJson(
-//                    mapOf(
-//                        "sourceStatus" to sourceStatus,
-//                        "targetStatus" to targetStatus
-//                    )
-//                )
-//            }
-//        }
 
     }
 }
