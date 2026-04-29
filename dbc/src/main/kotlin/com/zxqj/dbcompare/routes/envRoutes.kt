@@ -119,33 +119,40 @@ fun Route.envRoutes() {
             }
         }
 
-//        post("/docker/start") {
-//            try {
-//                val payload = call.receive<DockerCommandPayload>()
-//                val params = payload.side.toDockerParams()
-//                val effectiveParams = if (!params.gitRef.isNullOrEmpty()) {
-//                    prepareIsolatedEnvironment(params)
-//                } else {
-//                    params
-//                }
-//                runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
-//                val isRunning = resolveRunning(effectiveParams)
-//                call.respondDataStar {
-//                    patchSignalsJson(
-//                        mapOf(
-//                            "${payload.type}Status" to isRunning,
-//                            "dockerLoading" to false
-//                        )
-//                    )
-//                    otToast("${payload.type} started", variant = ToastVariant.SUCCESS)
-//                }
-//            } catch (e: Exception) {
-//                call.respondDataStar {
-//                    patchSignalsJson(mapOf("dockerLoading" to false))
-//                    otToast(e.message ?: "Failed to start docker", variant = ToastVariant.DANGER)
-//                }
-//            }
-//        }
+        post("/docker/start") {
+            val form = call.receiveParameters()
+            val type = call.request.queryParameters["type"] ?: "target"
+
+            val envConfig = try {
+                form.toSaveEnvRequest()
+            } catch (e: BadRequestException) {
+                call.respondDataStar {
+                    otToast(e.message ?: "Invalid form data", variant = ToastVariant.DANGER)
+                }
+                return@post
+            }
+
+            val side = if (type == "source") envConfig.source else envConfig.target
+            val params = side.toDockerParams()
+
+            try {
+                val effectiveParams = if (!params.gitRef.isNullOrEmpty()) {
+                    prepareIsolatedEnvironment(params)
+                } else {
+                    params
+                }
+                runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
+                val isRunning = resolveRunning(effectiveParams)
+                call.respondDataStar {
+                    patchSignalsJson(mapOf(type to mapOf("running" to isRunning)))
+                    otToast("$type started", variant = ToastVariant.SUCCESS)
+                }
+            } catch (e: Exception) {
+                call.respondDataStar {
+                    otToast(e.message ?: "Failed to start docker", variant = ToastVariant.DANGER)
+                }
+            }
+        }
 //
 //        post("/docker/stop") {
 //            try {
