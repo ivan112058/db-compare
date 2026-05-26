@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB Compare - Diff Result</title>
+    <link rel="stylesheet" href="/css/oat.min.css">
+    <link rel="stylesheet" href="/css/chip.min.css">
+    <link rel="stylesheet" href="/css/theme.css">
+</head>
+
+<body style="max-width: 1400px; margin: 0 auto; padding: var(--space-4);" data-theme="stone">
+    <div class="hstack justify-between mb-4">
+        <h2>Comparison Result</h2>
+        <a href="/config" class="button outline small">Back to Config</a>
+    </div>
+
+    <div class="hstack align-start gap-4" style="height: calc(100vh - 100px);" data-signals:result-id="">
+        <!-- Left Panel: Table List -->
+        <article class="card" style="width: 280px; flex-shrink: 0; height: 100%; display: flex; flex-direction: column;">
+            <header>
+                <h3>Tables</h3>
+            </header>
+            <div style="flex: 1; overflow-y: auto; padding: var(--space-2);">
+                <div data-init="$result-id = location.pathname.startsWith('/diff/') ? decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '') : (new URLSearchParams(location.search).get('id') || ''); if ($result-id) @get('/api/compare/' + encodeURIComponent($result-id) + '/tables')" data-signals:_selectedTable="''"
+                    data-signals:_tables="[]" data-signals:_structCount="0" data-signals:_dataCount="0"
+                    data-signals:_bothCount="0" data-signals:_loading="false">
+                    <div data-show="$_tables.length === 0" style="text-align: center; color: var(--muted-foreground);">
+                        Loading...</div>
+                    <div data-show="$_tables.length > 0">
+                        <div data-for:table in "$_tables">
+                            <div class="hstack justify-between"
+                                style="padding: var(--space-2); cursor: pointer; border-radius: var(--radius-medium); background: $_selectedTable === $table.tableName ? 'var(--accent)' : 'transparent';"
+                                data-on:click="$_selectedTable = $table.tableName; $_loading = true; @get('/api/compare/' + encodeURIComponent($result-id) + '/tables/' + encodeURIComponent($table.tableName))">
+                                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                                    data-text="$table.tableName"></span>
+                                <div class="hstack gap-1">
+                                    <span class="badge small" data-variant="warning"
+                                        data-show="$table.hasStructDiff">S</span>
+                                    <span class="badge small" data-variant="danger"
+                                        data-show="$table.hasDataDiff">D</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <footer>
+                <div class="hstack justify-between" style="font-size: var(--text-sm); margin-bottom: var(--space-2);">
+                    <div class="hstack gap-1">
+                        <span style="font-weight: 600;">Struct:</span>
+                        <span class="badge" data-variant="warning" data-text="$_structCount"></span>
+                    </div>
+                    <div class="hstack gap-1">
+                        <span style="font-weight: 600;">Data:</span>
+                        <span class="badge" data-variant="danger" data-text="$_dataCount"></span>
+                    </div>
+                    <div class="hstack gap-1">
+                        <span style="font-weight: 600;">Both:</span>
+                        <span class="badge" data-variant="info" data-text="$_bothCount"></span>
+                    </div>
+                </div>
+                <div class="hstack gap-2">
+                    <button class="small" style="flex: 1;"
+                        data-on:click="window.open('/api/compare/' + encodeURIComponent($result-id) + '/sql/download?type=upgrade', '_blank')">
+                        Upgrade SQL
+                    </button>
+                    <button class="small outline" style="flex: 1;"
+                        data-on:click="window.open('/api/compare/' + encodeURIComponent($result-id) + '/sql/download?type=rollback', '_blank')">
+                        Rollback SQL
+                    </button>
+                </div>
+            </footer>
+        </article>
+
+        <!-- Right Panel: Detail View -->
+        <article class="card" style="flex: 1; height: 100%; display: flex; flex-direction: column;">
+            <header>
+                <h3>Details</h3>
+            </header>
+            <div style="flex: 1; overflow-y: auto; padding: var(--space-4);">
+                <!-- No Selection State -->
+                <div data-show="!$_selectedTable" style="text-align: center; color: var(--muted-foreground);">
+                    <p>Select a table to view differences</p>
+                </div>
+
+                <!-- Loading State -->
+                <div data-show="$_loading" style="text-align: center; color: var(--muted-foreground);">
+                    <p>Loading...</p>
+                </div>
+
+                <!-- Detail Content -->
+                <div data-show="$_selectedTable && !$_loading" data-signals:_detail="null"
+                    data-signals:_upgradeSql="''" data-signals:_rollbackSql="''" data-signals:_sqlType="'upgrade'">
+
+                    <!-- Structure Diff -->
+                    <div data-show="window._hasStructDiff($_detail)">
+                        <h3 style="margin-bottom: var(--space-4);">Structure Difference</h3>
+
+                        <!-- Columns -->
+                        <div data-show="window._hasStructColumns($_detail)" style="margin-bottom: var(--space-6);">
+                            <h4 style="margin-bottom: var(--space-2);">Columns</h4>
+                            <div class="table">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 160px;">Column</th>
+                                            <th>Source</th>
+                                            <th>Target</th>
+                                            <th style="width: 100px;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr data-for:col in "$_detail.structDiff.columns"
+                                            data-class="{danger: $col.status === 'REMOVED', success: $col.status === 'ADDED', info: $col.status === 'MODIFIED'}">
+                                            <td data-text="$col.name"></td>
+                                            <td>
+                                                <span data-show="$col.source" data-text="window._formatColumn($col.source)"></span>
+                                                <span data-show="!$col.source" style="color: var(--muted-foreground);">--</span>
+                                            </td>
+                                            <td>
+                                                <span data-show="$col.target" data-text="window._formatColumn($col.target)"></span>
+                                                <span data-show="!$col.target" style="color: var(--muted-foreground);">--</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge small"
+                                                    data-variant="window._getStatusVariant($col.status)"
+                                                    data-text="$col.status"></span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Indexes -->
+                        <div data-show="window._hasStructIndexes($_detail)" style="margin-bottom: var(--space-6);">
+                            <h4 style="margin-bottom: var(--space-2);">Keys & Indexes</h4>
+                            <div class="table">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 100px;">Type</th>
+                                            <th style="width: 230px;">Name</th>
+                                            <th>Source</th>
+                                            <th>Target</th>
+                                            <th style="width: 100px;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr data-for:idx in "$_detail.structDiff.indexes"
+                                            data-class="{danger: $idx.status === 'REMOVED', success: $idx.status === 'ADDED', info: $idx.status === 'MODIFIED'}">
+                                            <td data-text="window._getIndexType($idx)"></td>
+                                            <td data-text="$idx.name"></td>
+                                            <td>
+                                                <div data-show="$idx.source">
+                                                    <span class="badge outline small" data-for:col in "$idx.source.columns"
+                                                        data-text="$col" style="margin-right: 4px;"></span>
+                                                </div>
+                                                <span data-show="!$idx.source" style="color: var(--muted-foreground);">--</span>
+                                            </td>
+                                            <td>
+                                                <div data-show="$idx.target">
+                                                    <span class="badge outline small" data-for:col in "$idx.target.columns"
+                                                        data-text="$col" style="margin-right: 4px;"></span>
+                                                </div>
+                                                <span data-show="!$idx.target" style="color: var(--muted-foreground);">--</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge small"
+                                                    data-variant="window._getStatusVariant($idx.status)"
+                                                    data-text="$idx.status"></span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Data Diff -->
+                    <div data-show="window._hasDataDiff($_detail)">
+                        <h3 style="margin-bottom: var(--space-4);">Data Difference</h3>
+
+                        <div data-show="$_detail.primaryKeys && $_detail.primaryKeys.length > 0" style="margin-bottom: var(--space-4);">
+                            <span class="badge" data-variant="info"
+                                data-text="'Primary Key: ' + $_detail.primaryKeys.join(', ')"></span>
+                        </div>
+
+                        <!-- Removed Rows (Source Only) -->
+                        <div data-show="window._hasRemovedRows($_detail)" style="margin-bottom: var(--space-6);">
+                            <h4 style="color: var(--danger); margin-bottom: var(--space-2);"
+                                data-text="'Source Only (Removed in Target) - ' + $_detail.dataDiff.removed.length"></h4>
+                            <div class="table" style="max-height: 400px; overflow: auto;">
+                                <table>
+                                    <thead>
+                                        <tr data-for:key in "window._getTableKeys($_detail.dataDiff.removed)">
+                                            <th data-text="$key"
+                                                data-class="{bold: window._isPrimaryKey($_detail, $key)}">
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr data-for:row in "$_detail.dataDiff.removed.slice(0, 50)">
+                                            <td data-for:key in "window._getTableKeys($_detail.dataDiff.removed)"
+                                                data-text="window._formatValue($row[$key])"></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div data-show="$_detail.dataDiff.removed.length > 50"
+                                style="text-align: center; color: var(--muted-foreground); font-size: var(--text-sm); padding: var(--space-2);">
+                                ... showing first 50 rows
+                            </div>
+                        </div>
+
+                        <!-- Added Rows (Target Only) -->
+                        <div data-show="window._hasAddedRows($_detail)" style="margin-bottom: var(--space-6);">
+                            <h4 style="color: var(--success); margin-bottom: var(--space-2);"
+                                data-text="'Target Only (Added in Target) - ' + $_detail.dataDiff.added.length"></h4>
+                            <div class="table" style="max-height: 400px; overflow: auto;">
+                                <table>
+                                    <thead>
+                                        <tr data-for:key in "window._getTableKeys($_detail.dataDiff.added)">
+                                            <th data-text="$key"
+                                                data-class="{bold: window._isPrimaryKey($_detail, $key)}">
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr data-for:row in "$_detail.dataDiff.added.slice(0, 50)">
+                                            <td data-for:key in "window._getTableKeys($_detail.dataDiff.added)"
+                                                data-text="window._formatValue($row[$key])"></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div data-show="$_detail.dataDiff.added.length > 50"
+                                style="text-align: center; color: var(--muted-foreground); font-size: var(--text-sm); padding: var(--space-2);">
+                                ... showing first 50 rows
+                            </div>
+                        </div>
+
+                        <!-- Modified Rows -->
+                        <div data-show="window._hasModifiedRows($_detail)" style="margin-bottom: var(--space-6);">
+                            <h4 style="color: var(--primary); margin-bottom: var(--space-2);"
+                                data-text="'Modified Rows - ' + $_detail.dataDiff.modified.length"></h4>
+                            <div class="table" style="max-height: 400px; overflow: auto;">
+                                <table>
+                                    <thead>
+                                        <tr data-for:key in "window._getTableKeys($_detail.dataDiff.modified)">
+                                            <th data-text="$key"
+                                                data-class="{bold: window._isPrimaryKey($_detail, $key)}">
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr data-for:row in "$_detail.dataDiff.modified.slice(0, 50)">
+                                            <td data-for:key in "window._getTableKeys($_detail.dataDiff.modified)">
+                                                <div data-show="window._isCellModified($row, $key)"
+                                                    style="background: color-mix(in srgb, var(--info) 10%, transparent); border-radius: var(--radius-small); padding: 2px 4px;">
+                                                    <div style="color: var(--danger); text-decoration: line-through; font-size: 0.9em;"
+                                                        data-text="window._getSourceValue($row, $key)"></div>
+                                                    <div style="color: var(--success); font-weight: 500;"
+                                                        data-text="window._formatValue($row[$key])"></div>
+                                                </div>
+                                                <span data-show="!window._isCellModified($row, $key)"
+                                                    data-text="window._formatValue($row[$key])"></span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div data-show="$_detail.dataDiff.modified.length > 50"
+                                style="text-align: center; color: var(--muted-foreground); font-size: var(--text-sm); padding: var(--space-2);">
+                                ... showing first 50 rows
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SQL Scripts -->
+                    <div style="margin-top: var(--space-6);">
+                        <h3 style="margin-bottom: var(--space-4);">SQL Scripts</h3>
+                        <div class="hstack justify-between" style="margin-bottom: var(--space-2);">
+                            <div class="hstack gap-2">
+                                <button class="small"
+                                    data-class="{outline: $_sqlType !== 'upgrade'}"
+                                    data-on:click="$_sqlType = 'upgrade'">Upgrade SQL</button>
+                                <button class="small"
+                                    data-class="{outline: $_sqlType !== 'rollback'}"
+                                    data-on:click="$_sqlType = 'rollback'">Rollback SQL</button>
+                            </div>
+                            <button class="small ghost"
+                                data-on:click="navigator.clipboard.writeText($_sqlType === 'upgrade' ? $_upgradeSql : $_rollbackSql)">
+                                Copy
+                            </button>
+                        </div>
+                        <pre
+                            style="background: var(--faint); padding: var(--space-3); border-radius: var(--radius-medium); overflow: auto; max-height: 300px; font-family: monospace; white-space: pre-wrap; word-break: break-all;"><code
+                                data-text="$_sqlType === 'upgrade' ? $_upgradeSql : $_rollbackSql"></code></pre>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </div>
+
+    <script src="/js/oat-chip-input.js" defer></script>
+    <script src="/js/oat.min.js" defer></script>
+    <script src="/js/chip.min.js" defer></script>
+    <script type="module" src="/js/datastar.js"></script>
+    <script>
+        // Helper functions for Datastar expressions
+        window._getTableKeys = function (rows) {
+            if (!rows || rows.length === 0) return [];
+            return Object.keys(rows[0]).filter(k => !k.startsWith('_') || k.startsWith('__parent_'));
+        };
+
+        window._isCellModified = function (row, key) {
+            if (!row._source) return false;
+            return row._source[key] !== row[key];
+        };
+
+        window._getSourceValue = function (row, key) {
+            return row._source ? (row._source[key] ?? 'NULL') : '';
+        };
+
+        window._formatValue = function (val) {
+            if (val === null || val === undefined) return 'NULL';
+            return String(val);
+        };
+
+        window._formatColumn = function (col) {
+            if (!col) return '';
+            const defaultVal = col.defaultValue ? (col.typeName === 'VARCHAR' ? ` DEFAULT '${col.defaultValue}'` : ` DEFAULT ${col.defaultValue}`) : '';
+            return `${col.typeName}(${col.columnSize}) ${col.isNullable ? 'NULL' : 'NOT NULL'}${col.isAutoIncrement ? ' AUTO_INCREMENT' : ''}${defaultVal}`;
+        };
+
+        window._getStatusVariant = function (status) {
+            if (status === 'ADDED') return 'success';
+            if (status === 'REMOVED') return 'danger';
+            if (status === 'MODIFIED') return 'info';
+            return 'secondary';
+        };
+
+        window._getIndexType = function (idx) {
+            return (idx.source && idx.source.type) || (idx.target && idx.target.type) || '';
+        };
+
+        window._isPrimaryKey = function (detail, key) {
+            return detail && detail.primaryKeys && detail.primaryKeys.includes(key);
+        };
+
+        window._hasStructDiff = function (detail) {
+            if (!detail || !detail.structDiff) return false;
+            return (detail.structDiff.columns && detail.structDiff.columns.length > 0) ||
+                   (detail.structDiff.indexes && detail.structDiff.indexes.length > 0);
+        };
+
+        window._hasStructColumns = function (detail) {
+            return detail && detail.structDiff && detail.structDiff.columns && detail.structDiff.columns.length > 0;
+        };
+
+        window._hasStructIndexes = function (detail) {
+            return detail && detail.structDiff && detail.structDiff.indexes && detail.structDiff.indexes.length > 0;
+        };
+
+        window._hasDataDiff = function (detail) {
+            return detail && detail.dataDiff != null;
+        };
+
+        window._hasRemovedRows = function (detail) {
+            return detail && detail.dataDiff && detail.dataDiff.removed && detail.dataDiff.removed.length > 0;
+        };
+
+        window._hasAddedRows = function (detail) {
+            return detail && detail.dataDiff && detail.dataDiff.added && detail.dataDiff.added.length > 0;
+        };
+
+        window._hasModifiedRows = function (detail) {
+            return detail && detail.dataDiff && detail.dataDiff.modified && detail.dataDiff.modified.length > 0;
+        };
+
+    </script>
+</body>
+
+</html>

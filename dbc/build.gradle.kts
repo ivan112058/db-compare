@@ -23,13 +23,15 @@ repositories {
 
 dependencies {
     // Ktor
-    val ktorVersion = "2.3.7"
+    val ktorVersion = "3.5.0"
     implementation("io.ktor:ktor-server-core-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-netty-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-status-pages-jvm:$ktorVersion")
     implementation("io.ktor:ktor-serialization-jackson-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-cors-jvm:$ktorVersion")
     implementation("dev.data-star.kotlin:kotlin-sdk:1.0.0-RC3")
+    implementation("io.ktor:ktor-server-html-builder:$ktorVersion")
 
     // Database
     implementation("com.mysql:mysql-connector-j:8.3.0")
@@ -43,6 +45,9 @@ dependencies {
 
     // Logging
     implementation("ch.qos.logback:logback-classic:1.5.16")
+
+    testImplementation(kotlin("test"))
+    testImplementation("io.ktor:ktor-server-test-host-jvm:$ktorVersion")
 }
 
 tasks.withType<KotlinCompile>().configureEach {

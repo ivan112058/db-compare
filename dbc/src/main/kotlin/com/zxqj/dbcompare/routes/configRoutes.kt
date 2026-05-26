@@ -2,144 +2,112 @@ package com.zxqj.dbcompare.routes
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
-import com.zxqj.dbcompare.model.DbConfig
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.zxqj.dbcompare.model.CompareRequest
 import dev.datastar.kotlin.sdk.ElementPatchMode.Inner
 import dev.datastar.kotlin.sdk.PatchElementsOptions
+import dev.datastar.kotlin.sdk.ServerSentEventGenerator
+import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
 import java.io.File
 
-private data class ConfigPayload(
-    val selectedConfig: String = "",
-    val saveConfigName: String = "",
-    val source: DbConfig? = null,
-    val target: DbConfig? = null,
-    val ignoreFields: List<String>? = null,
-    val excludeTables: List<String>? = null,
-    val ignoreDataTables: List<String>? = null,
-    val specifiedPrimaryKeys: List<String>? = null,
-    val treeTableConfig: List<String>? = null,
-    val excludeDataRows: List<String>? = null,
-    val includeDataRows: List<String>? = null
+private data class ConfigFilenamePayload(
+    val selectedConfig: String = ""
 )
 
 fun Route.configRoutes() {
     val configDir = File(System.getProperty("user.dir"), "config").apply { mkdirs() }
     val yamlMapper = ObjectMapper(YAMLFactory()).apply { findAndRegisterModules() }
 
-    route("/config") {
-        get {
-            respondYamlOptions(configDir, "#config-select")
+    suspend fun ApplicationCall.loadConfig(name: String?) {
+        val configName = name?.trim().orEmpty()
+        if (configName.isBlank()) {
+            respondDataStar {
+                otToast("Config name cannot be empty", variant = ToastVariant.DANGER)
+            }
+            return
         }
 
-        post {
-            val payload = call.receive<ConfigPayload>()
-            val file = File(configDir, payload.selectedConfig)
+        val file = File(configDir, normalizeYamlName(configName))
 
-            val text = file.readText(Charsets.UTF_8)
-            application.log.info("Loading config from ${file.absolutePath}, text = $text")
-
-            call.respondDataStar {
-                otToast("Configuration loaded")
+        if (!file.exists()) {
+            respondDataStar {
+                otToast("Config file not found: ${file.name}", variant = ToastVariant.DANGER)
             }
+            return
         }
 
-        put {
-            val payload = call.receive<ConfigPayload>()
-            val fileName = payload.saveConfigName
+        val config: CompareRequest = yamlMapper.readValue(file)
+        application.log.info("Loading config from ${file.absolutePath}")
 
-            val file = File(configDir, "$fileName.yml")
-            val optionElements: String
-            if (!file.exists()) {
-                file.createNewFile()
-                optionElements = loadYamlOptions(configDir)
-            } else {
-                optionElements = ""
-            }
-
-            call.respondDataStar {
-                if (optionElements.isNotBlank()) {
-                    patchElements(optionElements, PatchElementsOptions(selector = "#config-select", mode = Inner))
-                }
-                patchSignals("{\"selectedConfig\": \"$fileName.yml\"}")
-                otToast("Configuration saved")
-            }
+        respondDataStar {
+            setInputValue("saveConfigName", file.name.removeSuffix(".yml"))
+            fillConfigForm(config)
+            otToast("Configuration loaded")
         }
     }
-//    route("/config") {
-//        get("/list") {
-//            val files = listYamlFiles(configDir)
-//
-//            val selectElement = buildString {
-//                append("""<select id="config-select" data-on-intersect="@get('/api/config/list')">""")
-//                append("""<option value="">-- Select a file --</option>""")
-//                for (file in files) {
-//                    append("""<option value="$file">$file</option>""")
-//                }
-//                append("</select>")
-//            }
-//
-//            call.patchElements(selectElement)
-//        }
-//
-//        post("/load") {
-//            val payload = runCatching { call.receive<FilenamePayload>() }.getOrDefault(FilenamePayload())
-//            val filename = normalizeYamlName(payload.filename)
-//            val file = File(configDir, filename)
-//            if (!file.exists()) {
-//                call.respondDataStar {
-//                    toast("Config file not found: $filename", "error")
-//                }
-//                return@post
-//            }
-//            val config = yamlMapper.readValue(file, CompareRequest::class.java)
-//            call.respondDataStar {
-//                patchSignalsJson(
-//                    mapOf(
-//                        "selectedConfig" to filename,
-//                        "source" to (config.source ?: DbConfig()),
-//                        "target" to (config.target ?: DbConfig()),
-//                        "ignoreFields" to joinCsv(config.ignoreFields),
-//                        "excludeTables" to joinCsv(config.excludeTables),
-//                        "ignoreDataTables" to joinCsv(config.ignoreDataTables),
-//                        "specifiedPrimaryKeys" to joinCsv(config.specifiedPrimaryKeys),
-//                        "treeTableConfig" to joinCsv(config.treeTableConfig),
-//                        "excludeDataRows" to joinCsv(config.excludeDataRows),
-//                        "includeDataRows" to joinCsv(config.includeDataRows)
-//                    )
-//                )
-//                toast("Config loaded", "success")
-//            }
-//        }
-//
-//        post("/save") {
-//            val payload = call.receive<ConfigPayload>()
-//            val name = normalizeYamlName(payload.filename)
-//            val config = CompareRequest(
-//                source = payload.source,
-//                target = payload.target,
-//                ignoreFields = payload.ignoreFields,
-//                excludeTables = payload.excludeTables,
-//                ignoreDataTables = payload.ignoreDataTables,
-//                specifiedPrimaryKeys = payload.specifiedPrimaryKeys,
-//                treeTableConfig = payload.treeTableConfig,
-//                excludeDataRows = payload.excludeDataRows,
-//                includeDataRows = payload.includeDataRows
-//            )
-//            val file = File(configDir, name)
-//            yamlMapper.writeValue(file, config)
-//            call.respondDataStar {
-//                patchSignalsJson(
-//                    mapOf(
-//                        "configFiles" to listYamlFiles(configDir),
-//                        "selectedConfig" to name
-//                    )
-//                )
-//                toast("Config saved", "success")
-//            }
-//        }
-//    }
+
+    suspend fun ApplicationCall.saveConfig(name: String?, receivedForm: Parameters? = null) {
+        val configName = name?.trim().orEmpty()
+        if (configName.isBlank()) {
+            respondDataStar {
+                otToast("Config name cannot be empty", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val form = receivedForm ?: receiveParameters()
+        val file = File(configDir, normalizeYamlName(configName))
+        val optionElements = if (!file.exists()) {
+            file.createNewFile()
+            loadYamlOptions(configDir)
+        } else {
+            ""
+        }
+
+        yamlMapper.writeValue(file, form.toCompareRequest())
+
+        respondDataStar {
+            if (optionElements.isNotBlank()) {
+                patchElements(optionElements, PatchElementsOptions(selector = "#config-select", mode = Inner))
+            }
+            patchSignalsJson(mapOf("selectedConfig" to file.name))
+            setInputValue("saveConfigName", file.name.removeSuffix(".yml"))
+            otToast("Configuration saved")
+        }
+    }
+
+    route("/configs") {
+        get("/{name}") {
+            call.loadConfig(call.parameters["name"])
+        }
+
+        put("/{name}") {
+            call.saveConfig(call.parameters["name"])
+        }
+    }
 }
 
-private fun joinCsv(values: List<String>?): String = values?.joinToString(", ").orEmpty()
+internal fun ServerSentEventGenerator.fillConfigForm(config: CompareRequest) {
+    setInputValue("target.host", config.target?.host ?: "localhost")
+    setInputValue("target.port", (config.target?.port ?: 3306).toString())
+    setInputValue("target.username", config.target?.username ?: "root")
+    setInputValue("target.password", config.target?.password ?: "")
+    setInputValue("target.database", config.target?.database ?: "")
+
+    setInputValue("source.host", config.source?.host ?: "localhost")
+    setInputValue("source.port", (config.source?.port ?: 3306).toString())
+    setInputValue("source.username", config.source?.username ?: "root")
+    setInputValue("source.password", config.source?.password ?: "")
+    setInputValue("source.database", config.source?.database ?: "")
+
+    setChipInputValue("ignoreFields", config.ignoreFields.orEmpty())
+    setChipInputValue("excludeTables", config.excludeTables.orEmpty())
+    setChipInputValue("ignoreDataTables", config.ignoreDataTables.orEmpty())
+    setChipInputValue("specifiedPrimaryKeys", config.specifiedPrimaryKeys.orEmpty())
+    setChipInputValue("treeTableConfig", config.treeTableConfig.orEmpty())
+    setChipInputValue("excludeDataRows", config.excludeDataRows.orEmpty())
+    setChipInputValue("includeDataRows", config.includeDataRows.orEmpty())
+}

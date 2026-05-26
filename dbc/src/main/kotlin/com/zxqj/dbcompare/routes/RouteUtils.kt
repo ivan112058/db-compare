@@ -3,7 +3,6 @@ package com.zxqj.dbcompare.routes
 import dev.datastar.kotlin.sdk.ElementPatchMode.Inner
 import dev.datastar.kotlin.sdk.PatchElementsOptions
 import io.ktor.server.application.*
-import io.ktor.util.pipeline.PipelineContext
 import java.io.File
 
 fun listYamlFiles(dir: File): List<String> =
@@ -21,9 +20,9 @@ fun loadYamlOptions(dir: File): String {
     }
 }
 
-suspend fun PipelineContext<Unit, ApplicationCall>.respondYamlOptions(dir: File, selector: String) {
+suspend fun ApplicationCall.respondYamlOptions(dir: File, selector: String) {
     val optionElements = loadYamlOptions(dir)
-    call.respondDataStar {
+    respondDataStar {
         patchElements(optionElements, PatchElementsOptions(selector = selector, mode = Inner))
     }
 }

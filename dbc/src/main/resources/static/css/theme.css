@@ -1,24 +1,65 @@
 [data-theme="stone"] {
-  --background: light-dark(#fafaf9, #0c0a09);
-  --foreground: light-dark(#1c1917, #fafaf9);
-  --card: light-dark(#fff, #1c1917);
-  --card-foreground: light-dark(#1c1917, #fafaf9);
-  --primary: light-dark(#1c1917, #fafaf9);
-  --primary-foreground: light-dark(#fafaf9, #1c1917);
-  --secondary: light-dark(#f5f5f4, #292524);
-  --secondary-foreground: light-dark(#1c1917, #fafaf9);
-  --muted: light-dark(#f5f5f4, #292524);
-  --muted-foreground: light-dark(#78716c, #a8a29e);
-  --faint: light-dark(#fafaf9, #1a1614);
-  --faint-foreground: light-dark(#a8a29e, #78716c);
-  --accent: light-dark(#f5f5f4, #292524);
-  --danger: light-dark(#d32f2f, #f4807b);
-  --danger-foreground: light-dark(#fafaf9, #1c1917);
-  --success: light-dark(#008032, #6cc070);
-  --success-foreground: light-dark(#fafaf9, #1c1917);
-  --warning: light-dark(#a65b00, #f0a030);
-  --warning-foreground: #1c1917;
-  --border: light-dark(#d6d3d1, #44403c);
-  --input: light-dark(#d6d3d1, #44403c);
-  --ring: light-dark(#1c1917, #d6d3d1);
+    --background: light-dark(#fafaf9, #0c0a09);
+    --foreground: light-dark(#1c1917, #fafaf9);
+    --card: light-dark(#fff, #1c1917);
+    --card-foreground: light-dark(#1c1917, #fafaf9);
+    --primary: light-dark(#1c1917, #fafaf9);
+    --primary-foreground: light-dark(#fafaf9, #1c1917);
+    --secondary: light-dark(#f5f5f4, #292524);
+    --secondary-foreground: light-dark(#1c1917, #fafaf9);
+    --muted: light-dark(#f5f5f4, #292524);
+    --muted-foreground: light-dark(#78716c, #a8a29e);
+    --faint: light-dark(#fafaf9, #1a1614);
+    --faint-foreground: light-dark(#a8a29e, #78716c);
+    --accent: light-dark(#f5f5f4, #292524);
+    --danger: light-dark(#d32f2f, #f4807b);
+    --danger-foreground: light-dark(#fafaf9, #1c1917);
+    --success: light-dark(#008032, #6cc070);
+    --success-foreground: light-dark(#fafaf9, #1c1917);
+    --warning: light-dark(#a65b00, #f0a030);
+    --warning-foreground: #1c1917;
+    --border: light-dark(#d6d3d1, #44403c);
+    --input: light-dark(#d6d3d1, #44403c);
+    --ring: light-dark(#1c1917, #d6d3d1);
+}
+
+.chip-input-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    margin-block-start: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-7);
+    line-height: var(--leading-normal);
+    background-color: var(--background);
+    color: var(--foreground);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-medium);
+    gap: var(--space-2);
+
+    .chip {
+        padding: 0 var(--space-3);
+    }
+
+    .chip-input {
+        flex: 1;
+        margin-block-start: 0;
+        width: 100%;
+        padding: 0;
+        background-color: var(--background);
+        color: var(--foreground);
+        border: none;
+
+        &:focus {
+            outline: none;
+            border-color: none;
+            box-shadow: none;
+        }
+    }
+}
+
+.config-body {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: var(--space-4);
 }

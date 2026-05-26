@@ -18,11 +18,6 @@ import io.ktor.server.routing.*
 
 private val objectMapper = ObjectMapper().findAndRegisterModules()
 
-private data class TableSelectionPayload(
-    val resultId: String = "",
-    val tableName: String = ""
-)
-
 private data class TableSummary(
     val tableName: String,
     val hasStructDiff: Boolean,
@@ -33,8 +28,87 @@ fun Route.compareRoutes(
     compareService: CompareService,
     dbService: DatabaseService,
     resultCacheService: ResultCacheService,
-    sqlGenerationService: SqlGenerationService
+    sqlGenerationService: SqlGenerationService,
+    compare: (CompareRequest) -> List<TableDiff> = compareService::compare
 ) {
+    suspend fun ApplicationCall.respondCompareTables(id: String?) {
+        if (id.isNullOrBlank()) {
+            respondDataStar {
+                otToast("Missing result ID", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val diffs = resultCacheService.getResult(id)
+        if (diffs == null) {
+            respondDataStar {
+                otToast("Result not found", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val summaries = diffs.toSummaries()
+        val structCount = summaries.count { it.hasStructDiff }
+        val dataCount = summaries.count { it.hasDataDiff }
+        val bothCount = summaries.count { it.hasStructDiff && it.hasDataDiff }
+
+        respondDataStar {
+            patchSignalsJson(
+                mapOf(
+                    "_tables" to summaries,
+                    "_structCount" to structCount,
+                    "_dataCount" to dataCount,
+                    "_bothCount" to bothCount,
+                    "_selectedTable" to "",
+                    "_detail" to null,
+                    "_upgradeSql" to "",
+                    "_rollbackSql" to ""
+                )
+            )
+        }
+    }
+
+    suspend fun ApplicationCall.respondCompareTable(id: String?, tableName: String?) {
+        if (id.isNullOrBlank() || tableName.isNullOrBlank()) {
+            respondDataStar {
+                otToast("Missing parameters", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val diff = resultCacheService.getTableDiff(id, tableName)
+        if (diff == null) {
+            respondDataStar {
+                otToast("Table diff not found", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val upgrade = sqlGenerationService.generateUpgradeSql(diff)
+        val rollback = sqlGenerationService.generateRollbackSql(diff)
+
+        respondDataStar {
+            patchSignalsJson(
+                mapOf(
+                    "_loading" to false,
+                    "_selectedTable" to tableName,
+                    "_detail" to diff,
+                    "_upgradeSql" to upgrade,
+                    "_rollbackSql" to rollback,
+                    "_sqlType" to "upgrade"
+                )
+            )
+        }
+    }
+
+    get("/compare/{id}/tables") {
+        call.respondCompareTables(call.parameters["id"])
+    }
+
+    get("/compare/tables") {
+        call.respondCompareTables(call.request.queryParameters["id"])
+    }
+
     post("/compare") {
         val form = call.receiveParameters()
         application.log.info("compare $form")
@@ -50,7 +124,7 @@ fun Route.compareRoutes(
         }
 
         try {
-            val diffs = compareService.compare(request)
+            val diffs = compare(request)
 
             if (diffs.isEmpty()) {
                 call.respondDataStar {
@@ -59,7 +133,7 @@ fun Route.compareRoutes(
             } else {
                 val id = resultCacheService.saveResult(diffs)
                 call.respondDataStar {
-                    executeScript("window.location.href = '/diff.html?id=$id'")
+                    executeScript("window.location.href = '/diff/$id'")
                 }
             }
         } catch (e: Exception) {
@@ -116,30 +190,14 @@ fun Route.compareRoutes(
 //        }
     }
 
+    get("/compare/{id}/tables/{tableName}") {
+        call.respondCompareTable(call.parameters["id"], call.parameters["tableName"])
+    }
+
     post("/compare/table") {
-        val payload = call.receive<TableSelectionPayload>()
-        val diff = resultCacheService.getTableDiff(payload.resultId, payload.tableName)
-        if (diff == null) {
-            call.respondDataStar {
-                patchSignalsJson(mapOf("loading" to false))
-                toast("Table diff not found", "error")
-            }
-            return@post
-        }
-        val upgrade = sqlGenerationService.generateUpgradeSql(diff)
-        val rollback = sqlGenerationService.generateRollbackSql(diff)
-        call.respondDataStar {
-            patchSignalsJson(
-                mapOf(
-                    "loading" to false,
-                    "selectedTable" to payload.tableName,
-                    "detail" to diff,
-                    "upgradeSql" to upgrade,
-                    "rollbackSql" to rollback,
-                    "sqlType" to "upgrade"
-                )
-            )
-        }
+        val id = call.request.queryParameters["id"]
+        val tableName = call.request.queryParameters["table"]
+        call.respondCompareTable(id, tableName)
     }
 
     get("/compare/{id}/sql/download") {

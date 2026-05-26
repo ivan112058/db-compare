@@ -42,6 +42,172 @@ fun Route.envRoutes() {
     val envDir = File(configDir, "env").apply { mkdirs() }
     val yamlMapper = ObjectMapper(YAMLFactory()).apply { findAndRegisterModules() }
 
+    suspend fun ApplicationCall.loadEnv(name: String?) {
+        val envName = name?.trim().orEmpty()
+        if (envName.isBlank()) {
+            respondDataStar {
+                otToast("Env config name cannot be empty", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val file = File(envDir, normalizeYamlName(envName))
+        if (!file.exists()) {
+            respondDataStar {
+                otToast("Env config file not found: ${file.name}", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val envConfig: EnvConfig = yamlMapper.readValue<EnvConfig>(file)
+        application.log.info("Loading config from ${file.absolutePath}")
+
+        val targetRunning = resolveRunning(envConfig.target.toDockerParams())
+        val sourceRunning = resolveRunning(envConfig.source.toDockerParams())
+
+        respondDataStar {
+            fillEnvForm(envConfig)
+            patchSignalsJson(
+                mapOf(
+                    "selectedConfig" to file.name,
+                    "target" to mapOf("running" to targetRunning),
+                    "source" to mapOf("running" to sourceRunning)
+                )
+            )
+            otToast("Configuration loaded")
+        }
+    }
+
+    suspend fun ApplicationCall.saveEnv(name: String?, receivedForm: Parameters? = null) {
+        val form = receivedForm ?: receiveParameters()
+        application.log.info("save env $form")
+
+        val saved = try {
+            saveEnvConfig(form, envDir, yamlMapper, name)
+        } catch (e: BadRequestException) {
+            application.log.warn(e.message)
+            respondDataStar {
+                otToast(e.message ?: "env config error", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        respondDataStar {
+            if (saved.optionElements.isNotBlank()) {
+                patchElements(
+                    saved.optionElements,
+                    PatchElementsOptions(selector = "#env-config-select", mode = Inner)
+                )
+            }
+            patchSignalsJson(mapOf("selectedConfig" to "${saved.envConfig.projectName}.yml"))
+            setInputValue("projectName", saved.envConfig.projectName)
+            otToast("Configuration saved")
+        }
+    }
+
+    suspend fun ApplicationCall.generateCompareConfig(name: String?, receivedForm: Parameters? = null) {
+        val form = receivedForm ?: receiveParameters()
+        application.log.info("generate config $form")
+
+        val saved = try {
+            saveAndGenerateConfig(form, envDir, configDir, yamlMapper, name)
+        } catch (e: BadRequestException) {
+            application.log.warn(e.message)
+            respondDataStar {
+                otToast(e.message ?: "env config error", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        respondDataStar {
+            if (saved.optionElements.isNotBlank()) {
+                patchElements(
+                    saved.optionElements,
+                    PatchElementsOptions(selector = "#env-config-select", mode = Inner)
+                )
+            }
+            patchSignalsJson(mapOf("selectedConfig" to "${saved.envConfig.projectName}.yml"))
+            setInputValue("projectName", saved.envConfig.projectName)
+            otToast("Generated: ${saved.envConfig.projectName}.yml", variant = ToastVariant.SUCCESS)
+        }
+    }
+
+    suspend fun ApplicationCall.changeRuntime(sideName: String?, start: Boolean) {
+        val type = sideName ?: "target"
+        if (type != "target" && type != "source") {
+            respondDataStar {
+                otToast("Invalid side: $type", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val form = receiveParameters()
+        application.log.info("runtime change: type=$type, start=$start, form=$form")
+
+        val envConfig = try {
+            form.toSaveEnvRequest()
+        } catch (e: BadRequestException) {
+            application.log.warn("runtime change: form parse error: ${e.message}")
+            respondDataStar {
+                otToast(e.message ?: "Invalid form data", variant = ToastVariant.DANGER)
+            }
+            return
+        }
+
+        val side = if (type == "source") envConfig.source else envConfig.target
+        val params = side.toDockerParams()
+
+        try {
+            val effectiveParams = if (start && !params.gitRef.isNullOrEmpty()) {
+                application.log.info("runtime change: preparing isolated environment for gitRef=${params.gitRef}")
+                prepareIsolatedEnvironment(params)
+            } else {
+                params
+            }
+            if (start) {
+                runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
+            } else {
+                runDockerCompose(effectiveParams, "down")
+            }
+            val isRunning = resolveRunning(effectiveParams)
+            respondDataStar {
+                patchSignalsJson(mapOf(type to mapOf("running" to isRunning)))
+                otToast("$type ${if (start) "started" else "stopped"}", variant = ToastVariant.SUCCESS)
+            }
+        } catch (e: Exception) {
+            application.log.error("runtime change: failed", e)
+            respondDataStar {
+                otToast(e.message ?: "Failed to change docker runtime", variant = ToastVariant.DANGER)
+            }
+        }
+    }
+
+    route("/envs") {
+        get {
+            call.respondYamlOptions(envDir, "#env-config-select")
+        }
+
+        get("/{name}") {
+            call.loadEnv(call.parameters["name"])
+        }
+
+        put("/{name}") {
+            call.saveEnv(call.parameters["name"])
+        }
+
+        post("/{name}/compare-config") {
+            call.generateCompareConfig(call.parameters["name"])
+        }
+
+        put("/{name}/sides/{side}/runtime") {
+            call.changeRuntime(call.parameters["side"], start = true)
+        }
+
+        delete("/{name}/sides/{side}/runtime") {
+            call.changeRuntime(call.parameters["side"], start = false)
+        }
+    }
+
     route("/env") {
         get {
             call.respondYamlOptions(envDir, "#env-config-select")
@@ -49,143 +215,27 @@ fun Route.envRoutes() {
 
         post {
             val payload = call.receive<EnvFilenamePayload>()
-            val file = File(envDir, payload.selectedConfig)
-
-            val text = file.readText(Charsets.UTF_8)
-
-            val envConfig: EnvConfig = yamlMapper.readValue<EnvConfig>(file)
-            application.log.info("Loading config from ${file.absolutePath}, text = $text")
-
-            val targetRunning = resolveRunning(envConfig.target.toDockerParams())
-            val sourceRunning = resolveRunning(envConfig.source.toDockerParams())
-
-            call.respondDataStar {
-                fillEnvForm(envConfig)
-                patchSignalsJson(
-                    mapOf(
-                        "target" to mapOf("running" to targetRunning),
-                        "source" to mapOf("running" to sourceRunning)
-                    )
-                )
-                otToast("Configuration loaded")
-            }
+            call.loadEnv(payload.selectedConfig)
         }
 
         put {
             val form = call.receiveParameters()
-            application.log.info("save env $form")
-
-            val saved = try {
-                saveEnvConfig(form, envDir, yamlMapper)
-            } catch (e: BadRequestException) {
-                application.log.warn(e.message)
-                call.respondDataStar {
-                    otToast(e.message ?: "env config error", variant = ToastVariant.DANGER)
-                }
-                return@put
-            }
-
-            call.respondDataStar {
-                if (saved.optionElements.isNotBlank()) {
-                    patchElements(
-                        saved.optionElements,
-                        PatchElementsOptions(selector = "#env-config-select", mode = Inner)
-                    )
-                }
-                patchSignals("{\"selectedConfig\": \"${saved.envConfig.projectName}.yml\"}")
-                otToast("Configuration saved")
-            }
+            call.saveEnv(form["projectName"], form)
         }
 
         post("/generate") {
             val form = call.receiveParameters()
-            application.log.info("generate config $form")
-
-            val saved = try {
-                saveAndGenerateConfig(form, envDir, configDir, yamlMapper)
-            } catch (e: BadRequestException) {
-                application.log.warn(e.message)
-                call.respondDataStar {
-                    otToast(e.message ?: "env config error", variant = ToastVariant.DANGER)
-                }
-                return@post
-            }
-
-            call.respondDataStar {
-                if (saved.optionElements.isNotBlank()) {
-                    patchElements(
-                        saved.optionElements,
-                        PatchElementsOptions(selector = "#env-config-select", mode = Inner)
-                    )
-                }
-                patchSignals("{\"selectedConfig\": \"${saved.envConfig.projectName}.yml\"}")
-                otToast("Generated: ${saved.envConfig.projectName}.yml", variant = ToastVariant.SUCCESS)
-            }
+            call.generateCompareConfig(form["projectName"], form)
         }
 
         post("/docker/start") {
-            val form = call.receiveParameters()
             val type = call.request.queryParameters["type"] ?: "target"
-
-            val envConfig = try {
-                form.toSaveEnvRequest()
-            } catch (e: BadRequestException) {
-                call.respondDataStar {
-                    otToast(e.message ?: "Invalid form data", variant = ToastVariant.DANGER)
-                }
-                return@post
-            }
-
-            val side = if (type == "source") envConfig.source else envConfig.target
-            val params = side.toDockerParams()
-
-            try {
-                val effectiveParams = if (!params.gitRef.isNullOrEmpty()) {
-                    prepareIsolatedEnvironment(params)
-                } else {
-                    params
-                }
-                runDockerCompose(effectiveParams, "up", "-d", "--force-recreate", "--remove-orphans")
-                val isRunning = resolveRunning(effectiveParams)
-                call.respondDataStar {
-                    patchSignalsJson(mapOf(type to mapOf("running" to isRunning)))
-                    otToast("$type started", variant = ToastVariant.SUCCESS)
-                }
-            } catch (e: Exception) {
-                call.respondDataStar {
-                    otToast(e.message ?: "Failed to start docker", variant = ToastVariant.DANGER)
-                }
-            }
+            call.changeRuntime(type, start = true)
         }
 
         post("/docker/stop") {
-            val form = call.receiveParameters()
             val type = call.request.queryParameters["type"] ?: "target"
-
-            val envConfig = try {
-                form.toSaveEnvRequest()
-            } catch (e: BadRequestException) {
-                call.respondDataStar {
-                    otToast(e.message ?: "Invalid form data", variant = ToastVariant.DANGER)
-                }
-                return@post
-            }
-
-            val side = if (type == "source") envConfig.source else envConfig.target
-            val params = side.toDockerParams()
-
-            try {
-                runDockerCompose(params, "down")
-                val isRunning = resolveRunning(params)
-                call.respondDataStar {
-                    patchSignalsJson(mapOf(type to mapOf("running" to isRunning)))
-                    otToast("$type stopped", variant = ToastVariant.SUCCESS)
-                }
-            } catch (e: Exception) {
-                call.respondDataStar {
-                    otToast(e.message ?: "Failed to stop docker", variant = ToastVariant.DANGER)
-                }
-            }
+            call.changeRuntime(type, start = false)
         }
 
     }
@@ -254,10 +304,15 @@ fun Parameters.toSaveEnvRequest(): EnvConfig {
 internal fun saveEnvConfig(
     form: Parameters,
     envDir: File,
-    yamlMapper: ObjectMapper
+    yamlMapper: ObjectMapper,
+    resourceName: String? = null
 ): SavedEnvConfig {
-    val request = form.toSaveEnvRequest()
-    val file = File(envDir, "${request.projectName}.yml")
+    val requestedName = resourceName?.trim()?.takeIf { it.isNotEmpty() }?.removeSuffix(".yml")
+    val request = form.toSaveEnvRequest().let {
+        if (requestedName == null) it else it.copy(projectName = requestedName)
+    }
+    envDir.mkdirs()  // Ensure directory exists
+    val file = File(envDir, normalizeYamlName(request.projectName))
     val optionElements = if (!file.exists()) {
         file.createNewFile()
         loadYamlOptions(envDir)
@@ -279,10 +334,11 @@ internal fun saveAndGenerateConfig(
     form: Parameters,
     envDir: File,
     configDir: File,
-    yamlMapper: ObjectMapper
+    yamlMapper: ObjectMapper,
+    resourceName: String? = null
 ): SavedEnvConfig {
-    val saved = saveEnvConfig(form, envDir, yamlMapper)
-    val compareFile = File(configDir, "${saved.envConfig.projectName}.yml")
+    val saved = saveEnvConfig(form, envDir, yamlMapper, resourceName)
+    val compareFile = File(configDir, normalizeYamlName(saved.envConfig.projectName))
     yamlMapper.writeValue(compareFile, saved.envConfig.toGeneratedCompareRequest())
     return saved
 }
@@ -309,6 +365,8 @@ private fun ServerSentEventGenerator.fillEnvDbInfo(prefix: String, envDbInfo: En
 }
 
 private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
+    println("prepareIsolatedEnvironment: codePath=${params.codePath}, composePath=${params.composePath}, gitRef=${params.gitRef}")
+
     val codeDir = File(params.codePath)
     val composeFile = File(params.composePath)
 
@@ -316,14 +374,22 @@ private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
         throw RuntimeException("Code or Compose file not found")
     }
 
-    val relComposePath = composeFile.absolutePath.removePrefix(codeDir.absolutePath).removePrefix(File.separator)
-    val composeContent = runGitCommand(codeDir, "show", "${params.gitRef}:$relComposePath")
+    val relComposePath = composeFile.absolutePath
+        .removePrefix(codeDir.absolutePath)
+        .removePrefix(File.separator)
+        .replace('\\', '/')  // Git always uses forward slashes
+    println("prepareIsolatedEnvironment: relComposePath=$relComposePath")
+
+    val gitShowCmd = "${params.gitRef}:$relComposePath"
+    println("prepareIsolatedEnvironment: git show $gitShowCmd")
+    val composeContent = runGitCommand(codeDir, "show", gitShowCmd)
+    println("prepareIsolatedEnvironment: composeContent length=${composeContent.length}")
 
     val yamlFactory = YAMLFactory()
     val mapper = ObjectMapper(yamlFactory)
     val rootNode = mapper.readTree(composeContent)
 
-    val referencedFiles = mutableListOf(relComposePath)
+    val volumeFiles = mutableListOf<String>()
 
     val servicesNode = rootNode.path("services")
     val serviceNode = servicesNode.path(params.serviceName)
@@ -340,37 +406,37 @@ private fun prepareIsolatedEnvironment(params: DockerParams): DockerParams {
                         val composeDir = File(relComposePath).parent ?: ""
                         val resolvedPath = File(File(codeDir, composeDir), hostPath).canonicalPath
                         val relPath = resolvedPath.removePrefix(codeDir.canonicalPath).removePrefix(File.separator)
-                        referencedFiles.add(relPath)
+                            .replace('\\', '/')  // Git always uses forward slashes
+                        volumeFiles.add(relPath)
                     }
                 }
             }
         }
     }
-
-    val commonRoot = findCommonRoot(referencedFiles)
+    println("prepareIsolatedEnvironment: volumeFiles=$volumeFiles")
 
     val tempDir = File(System.getProperty("java.io.tmpdir"), "db-compare/${params.prefix}_${params.gitRef}")
     if (!tempDir.exists()) tempDir.mkdirs()
+    println("prepareIsolatedEnvironment: tempDir=${tempDir.absolutePath}")
 
-    val archiveCmd = listOf("git", "archive", "--format=tar", params.gitRef!!, commonRoot)
-    val tarCmd = listOf("tar", "-x", "-C", tempDir.absolutePath)
+    // Write compose file (already read from git)
+    val gitRef = params.gitRef!!
+    val composeTargetFile = File(tempDir, relComposePath)
+    composeTargetFile.parentFile.mkdirs()
+    composeTargetFile.writeText(composeContent, Charsets.UTF_8)
+    println("prepareIsolatedEnvironment: wrote compose file to ${composeTargetFile.absolutePath}")
 
-    val archivePb = ProcessBuilder(archiveCmd).directory(codeDir)
-    val tarPb = ProcessBuilder(tarCmd)
-    val archiveProcess = archivePb.start()
-    val tarProcess = tarPb.start()
-
-    archiveProcess.inputStream.transferTo(tarProcess.outputStream)
-    tarProcess.outputStream.close()
-
-    val archiveExit = archiveProcess.waitFor()
-    val tarExit = tarProcess.waitFor()
-
-    if (archiveExit != 0 || tarExit != 0) {
-        throw RuntimeException("Failed to archive/extract code. Archive: $archiveExit, Tar: $tarExit")
+    // Extract each volume file directly
+    for (filePath in volumeFiles) {
+        val targetFile = File(tempDir, filePath)
+        targetFile.parentFile.mkdirs()
+        val content = runGitCommand(codeDir, "show", "$gitRef:$filePath")
+        targetFile.writeText(content, Charsets.UTF_8)
     }
+    println("prepareIsolatedEnvironment: extracted ${volumeFiles.size} volume files")
 
-    val newComposePath = File(tempDir, relComposePath).absolutePath
+    val newComposePath = composeTargetFile.absolutePath
+    println("prepareIsolatedEnvironment: newComposePath=$newComposePath")
     return params.copy(codePath = tempDir.absolutePath, composePath = newComposePath)
 }
 
@@ -405,20 +471,6 @@ private fun runGitCommand(dir: File, vararg args: String): String {
     return output
 }
 
-private fun findCommonRoot(paths: List<String>): String {
-    if (paths.isEmpty()) return ""
-    var common = File(paths[0]).parent ?: ""
-    if (common == "/") common = ""
-    for (path in paths) {
-        var p = File(path).parent ?: ""
-        while (!p.startsWith(common) && common.isNotEmpty()) {
-            common = File(common).parent ?: ""
-        }
-        if (common.isEmpty()) break
-    }
-    return common
-}
-
 private fun checkContainerStatus(codePath: String, composePath: String, prefix: String, serviceName: String): Boolean {
     if (!File(composePath).exists()) return false
 
@@ -449,6 +501,10 @@ private fun runDockerCompose(params: DockerParams, vararg commands: String) {
         cmd.addAll(commands)
         if (params.serviceName.isNotEmpty()) cmd.add(params.serviceName)
 
+        println("runDockerCompose: cmd=${cmd.joinToString(" ")}")
+        println("runDockerCompose: tempComposeFile=${tempComposeFile.absolutePath}")
+        println("runDockerCompose: codePath=${params.codePath}")
+
         val pb = ProcessBuilder(cmd)
         val env = pb.environment()
         env["DB_PORT"] = params.port.toString()
@@ -467,6 +523,7 @@ private fun runDockerCompose(params: DockerParams, vararg commands: String) {
         process.errorStream.bufferedReader().forEachLine { output.appendLine(it) }
 
         val exitCode = process.waitFor()
+        println("runDockerCompose: exitCode=$exitCode, output=$output")
         if (exitCode != 0) {
             throw RuntimeException("Docker command failed with code $exitCode: $output")
         }
